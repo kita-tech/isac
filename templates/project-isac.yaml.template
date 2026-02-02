@@ -1,0 +1,11 @@
+# ISAC Project Configuration
+# .isac.yaml (プロジェクトルートに配置)
+#
+# このファイルがあるディレクトリでは、ここで指定したプロジェクトIDが使用されます。
+# グローバル設定（~/.isac/config.yaml）より優先されます。
+
+# プロジェクトID（必須）
+project_id: my-project
+
+# チームID（オプション - チームナレッジ共有用）
+# team_id: my-team

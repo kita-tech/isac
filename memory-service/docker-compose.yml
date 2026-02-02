@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  memory:
+    build: .
+    container_name: isac-memory
+    ports:
+      - "8100:8000"
+    volumes:
+      - memory-data:/data
+    environment:
+      - DATABASE_PATH=/data/memory.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  memory-data:
+    name: isac-memory-data

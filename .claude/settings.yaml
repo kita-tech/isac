@@ -1,0 +1,41 @@
+# ISAC Claude Code CLI Settings
+# このファイルを .claude/settings.yaml に配置
+#
+# Hooks Reference: https://docs.anthropic.com/en/docs/claude-code/hooks
+
+# MCP Servers
+mcpServers:
+  notion:
+    command: npx
+    args: ["-y", "@notionhq/notion-mcp-server"]
+    env:
+      OPENAPI_MCP_HEADERS: '{"Authorization": "Bearer ${NOTION_API_TOKEN}", "Notion-Version": "2022-06-28"}'
+
+hooks:
+  # ============================================================
+  # UserPromptSubmit: プロンプト送信時
+  # ============================================================
+  # Memory Serviceから関連記憶を取得してコンテキストに追加
+  UserPromptSubmit:
+    - type: command
+      command: ".claude/hooks/on-prompt.sh \"$PROMPT\""
+      timeout: 5000
+
+  # ============================================================
+  # PostToolUse: ツール実行後
+  # ============================================================
+  # Edit/Writeツール実行後に作業履歴を自動保存（軽量・高速）
+  PostToolUse:
+    - type: command
+      matcher: "Edit|Write"
+      command: ".claude/hooks/post-edit.sh \"$FILE_PATH\""
+      timeout: 3000
+
+  # ============================================================
+  # Stop: タスク完了時（AI分類用）
+  # ============================================================
+  # タスク完了時にAIが作業内容を分類して記憶に保存
+  # 注意: prompt typeはClaudeの応答に分類リクエストを追加します
+  Stop:
+    - type: prompt
+      prompt_file: ".claude/hooks/on-stop.sh"

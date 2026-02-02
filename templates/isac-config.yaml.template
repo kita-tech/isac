@@ -1,0 +1,27 @@
+# ISAC Configuration
+# ~/.isac/config.yaml
+#
+# このファイルは作業ディレクトリとプロジェクトIDのマッピングを定義します。
+# Claude Code CLI のHookがこのファイルを参照してプロジェクトを自動判定します。
+
+version: 1
+
+# Memory Service の URL
+memory_service_url: http://localhost:8100
+
+# ディレクトリ → プロジェクトID のマッピング
+# 優先順位: 完全一致 > プレフィックスマッチ > default
+projects:
+  # 完全一致の例
+  # /Users/me/work/frontend: frontend-app
+  # /Users/me/work/backend: backend-api
+
+  # プレフィックスマッチの例（末尾に / をつける）
+  # /Users/me/clients/acme/: acme-projects
+
+  # マッチしない場合のデフォルト（オプション）
+  # default: personal
+
+# 厳格モード（オプション）
+# true にすると、Memory Service に存在しないプロジェクトへの書き込みを警告
+strict_mode: false
