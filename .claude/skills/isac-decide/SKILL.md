@@ -1,4 +1,9 @@
-# Decide Skill
+---
+name: isac-decide
+description: 重要な技術的決定を記録します。
+---
+
+# ISAC Decide Skill
 
 重要な技術的決定を記録します。
 
@@ -70,7 +75,7 @@ curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/search" \
 
 ## 関連スキル
 
-- `/memory` - 記憶の検索・管理
-- `/review` - 設計レビュー（方針・アーキテクチャの検討）
-- `/code-review` - コードレビュー（実装の品質チェック）
-- `/suggest` - 状況に応じたSkill提案
+- `/isac-memory` - 記憶の検索・管理
+- `/isac-review` - 設計レビュー（方針・アーキテクチャの検討）
+- `/isac-code-review` - コードレビュー（実装の品質チェック）
+- `/isac-suggest` - 状況に応じたSkill提案

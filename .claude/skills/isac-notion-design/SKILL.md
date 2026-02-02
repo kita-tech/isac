@@ -1,11 +1,16 @@
-# Notion Design Skill
+---
+name: isac-notion-design
+description: Notionに記載されたシステムの概要から設計を行います。
+---
+
+# ISAC Notion Design Skill
 
 Notionに記載されたシステムの概要から設計を行います。
 
 ## 使い方
 
 ```
-/notion-design [NotionページURL or ページID]
+/isac-notion-design [NotionページURL or ページID]
 ```
 
 ## 前提条件
@@ -113,7 +118,7 @@ MCPツール `mcp__notion__*` を使用してページ内容を取得します�
 
 ### 入力
 ```
-/notion-design https://notion.so/myworkspace/API-Gateway-abc123
+/isac-notion-design https://notion.so/myworkspace/API-Gateway-abc123
 ```
 
 ### 出力
@@ -141,6 +146,6 @@ MCPツール `mcp__notion__*` を使用してページ内容を取得します�
 
 ## 関連スキル
 
-- `/review` - 設計レビュー（Notionなしで議論）
-- `/decide` - 決定の記録
-- `/memory` - 記憶の検索・管理
+- `/isac-review` - 設計レビュー（Notionなしで議論）
+- `/isac-decide` - 決定の記録
+- `/isac-memory` - 記憶の検索・管理

@@ -353,12 +353,12 @@ else
     FAILED=$((FAILED + 1))
 fi
 
-# テスト8: skills シンボリックリンクの確認
-if [ -L "$TEST_DIR/.claude/skills/memory.md" ]; then
-    echo -e "${GREEN}✓ PASS${NC}: skills/memory.mdがシンボリックリンクで作成される"
+# テスト8: skills シンボリックリンクの確認（ディレクトリ構造）
+if [ -L "$TEST_DIR/.claude/skills/isac-memory" ] && [ -d "$TEST_DIR/.claude/skills/isac-memory" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: skills/isac-memoryがシンボリックリンクで作成される"
     PASSED=$((PASSED + 1))
 else
-    echo -e "${RED}✗ FAIL${NC}: skills/memory.mdがシンボリックリンクでない"
+    echo -e "${RED}✗ FAIL${NC}: skills/isac-memoryがシンボリックリンクでない"
     FAILED=$((FAILED + 1))
 fi
 

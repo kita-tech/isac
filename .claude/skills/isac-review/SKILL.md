@@ -1,11 +1,16 @@
-# Review Skill
+---
+name: isac-review
+description: 設計や技術選定を複数のペルソナで検討し、決定を記録します。
+---
+
+# ISAC Review Skill
 
 設計や技術選定を複数のペルソナで検討し、決定を記録します。
 
 ## 使い方
 
 ```
-/review [議題]
+/isac-review [議題]
 ```
 
 ## 実行手順
@@ -87,7 +92,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 
 ### 入力
 ```
-/review 認証方式の選定（JWT vs セッション）
+/isac-review 認証方式の選定（JWT vs セッション）
 ```
 
 ### 出力例
@@ -150,14 +155,14 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 
 | 指定 | ペルソナ数 | 用途 |
 |------|-----------|------|
-| `/review` | 3人 | 標準的な設計レビュー |
-| `/review --quick` | 2人 | 軽微な決定 |
-| `/review --full` | 5人 | 重要なアーキテクチャ決定 |
-| `/review --team` | 10人 | 大きな技術選定 |
+| `/isac-review` | 3人 | 標準的な設計レビュー |
+| `/isac-review --quick` | 2人 | 軽微な決定 |
+| `/isac-review --full` | 5人 | 重要なアーキテクチャ決定 |
+| `/isac-review --team` | 10人 | 大きな技術選定 |
 
 ## 関連スキル
 
-- `/memory` - 記憶の検索・管理
-- `/decide` - 決定の直接記録（レビューなし）
-- `/code-review` - コードレビュー（実装の品質チェック）
-- `/suggest` - 状況に応じたSkill提案
+- `/isac-memory` - 記憶の検索・管理
+- `/isac-decide` - 決定の直接記録（レビューなし）
+- `/isac-code-review` - コードレビュー（実装の品質チェック）
+- `/isac-suggest` - 状況に応じたSkill提案
