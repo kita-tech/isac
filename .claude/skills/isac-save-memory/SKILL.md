@@ -1,12 +1,17 @@
-# /save-memory - AI分類による記憶保存
+---
+name: isac-save-memory
+description: タスク完了時に、AIが作業内容を分類してMemory Serviceに保存します。
+---
+
+# ISAC Save Memory Skill
 
 タスク完了時に、AIが作業内容を分類してMemory Serviceに保存します。
 
 ## 使用方法
 
 ```
-/save-memory
-/save-memory 認証機能の実装が完了
+/isac-save-memory
+/isac-save-memory 認証機能の実装が完了
 ```
 
 ## 動作

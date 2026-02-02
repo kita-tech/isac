@@ -1,4 +1,9 @@
-# Memory Skill
+---
+name: isac-memory
+description: プロジェクトの長期記憶を管理します。
+---
+
+# ISAC Memory Skill
 
 プロジェクトの長期記憶を管理します。
 
@@ -74,7 +79,7 @@ curl "${MEMORY_SERVICE_URL:-http://localhost:8100}/export/${CLAUDE_PROJECT:-defa
 
 ## 関連スキル
 
-- `/decide` - 決定の記録
-- `/review` - 設計レビュー（方針・アーキテクチャの検討）
-- `/code-review` - コードレビュー（実装の品質チェック）
-- `/suggest` - 状況に応じたSkill提案
+- `/isac-decide` - 決定の記録
+- `/isac-review` - 設計レビュー（方針・アーキテクチャの検討）
+- `/isac-code-review` - コードレビュー（実装の品質チェック）
+- `/isac-suggest` - 状況に応じたSkill提案

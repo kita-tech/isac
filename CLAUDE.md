@@ -71,6 +71,47 @@ isac switch <id>   # プロジェクト切り替え
 - Hooks で長時間の処理をしない（5秒以内）
 - 外部サービスへの依存を増やさない
 - 軽量モード（Docker不要）は採用しない（チームナレッジ共有が困難なため）
+- リモートブランチへの直接マージ禁止（必ず PR を作成すること）
+
+## Skills 命名規則
+
+ISACのスキルは必ず `isac-` プレフィックスを付けること（他のコマンドとの競合回避）。
+
+| スキル名 | 用途 |
+|---------|------|
+| `/isac-review` | 設計レビュー（ペルソナ議論） |
+| `/isac-code-review` | コードレビュー（品質チェック・スコアリング） |
+| `/isac-pr-review` | GitHub PRレビュー（PRコメントに投稿） |
+| `/isac-memory` | 記憶の検索・管理 |
+| `/isac-decide` | 決定の記録 |
+| `/isac-suggest` | 状況に応じたSkill提案 |
+| `/isac-save-memory` | AI分類による記憶保存 |
+| `/isac-notion-design` | Notionからの設計書生成 |
+
+### Skills ファイル構造
+
+Claude Code CLI がスキルを認識するには、ディレクトリ構造と YAML フロントマターが必要：
+
+```
+.claude/skills/
+├── isac-review/
+│   └── SKILL.md      # エントリーポイント（必須）
+├── isac-code-review/
+│   └── SKILL.md
+└── ...
+```
+
+各 `SKILL.md` の先頭にはフロントマターを記載：
+
+```markdown
+---
+name: isac-review
+description: 設計や技術選定を複数のペルソナで検討し、決定を記録します。
+---
+
+# ISAC Review Skill
+...
+```
 
 ## 設計原則
 

@@ -74,11 +74,13 @@ cmd_install() {
         echo -e "${YELLOW}  Warning: Source hooks not found${NC}"
     fi
 
-    # Skills コピー
+    # Skills コピー（ディレクトリ構造）
     echo -e "${GREEN}[3/5] Installing skills...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/skills"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
-        cp -f "${ISAC_SOURCE_DIR}/.claude/skills/"*.md "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
+        # 既存のスキルを削除して再コピー
+        rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
+        cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
         echo -e "  Copied skills to ${ISAC_GLOBAL_DIR}/skills/"
     else
         echo -e "${YELLOW}  Warning: Source skills not found${NC}"
@@ -94,8 +96,31 @@ cmd_install() {
         echo -e "${YELLOW}  Warning: Source agents not found${NC}"
     fi
 
+    # CLAUDE.md コピー（~/.isac/CLAUDE.md → ~/.claude/CLAUDE.md）
+    echo -e "${GREEN}[5/6] Setting up CLAUDE.md...${NC}"
+    if [ -f "${ISAC_SOURCE_DIR}/templates/CLAUDE.md.template" ]; then
+        # テンプレートから~/.isac/CLAUDE.md を作成（言語設定セクションのみ抽出）
+        if [ ! -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" ]; then
+            cat > "${ISAC_GLOBAL_DIR}/CLAUDE.md" << 'CLAUDEMD_EOF'
+# ISAC グローバル設定
+
+## 言語設定
+
+**すべての応答は日本語で行うこと。**
+CLAUDEMD_EOF
+            echo -e "  Created ${ISAC_GLOBAL_DIR}/CLAUDE.md"
+        else
+            echo -e "${YELLOW}  CLAUDE.md already exists, skipping${NC}"
+        fi
+
+        # ~/.claude/CLAUDE.md にコピー
+        mkdir -p "${HOME}/.claude"
+        cp -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" "${HOME}/.claude/CLAUDE.md"
+        echo -e "  Copied to ~/.claude/CLAUDE.md"
+    fi
+
     # 設定ファイル作成
-    echo -e "${GREEN}[5/5] Creating config.yaml...${NC}"
+    echo -e "${GREEN}[6/6] Creating config.yaml...${NC}"
     if [ ! -f "${ISAC_GLOBAL_DIR}/config.yaml" ]; then
         cat > "${ISAC_GLOBAL_DIR}/config.yaml" << 'EOF'
 # ISAC Global Configuration
@@ -148,19 +173,30 @@ cmd_update() {
         echo -e "  Updated hooks"
     fi
 
-    # Skills 更新
+    # Skills 更新（ディレクトリ構造）
     echo -e "${GREEN}[2/3] Updating skills...${NC}"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
-        cp -f "${ISAC_SOURCE_DIR}/.claude/skills/"*.md "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
+        rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
+        cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
         echo -e "  Updated skills"
     fi
 
     # Agents 更新
-    echo -e "${GREEN}[3/3] Updating agents...${NC}"
+    echo -e "${GREEN}[3/4] Updating agents...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/agents"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/agents" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/agents/"*.md "${ISAC_GLOBAL_DIR}/agents/" 2>/dev/null || true
         echo -e "  Updated agents"
+    fi
+
+    # CLAUDE.md 更新（~/.isac/CLAUDE.md → ~/.claude/CLAUDE.md）
+    echo -e "${GREEN}[4/4] Updating CLAUDE.md...${NC}"
+    if [ -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" ]; then
+        mkdir -p "${HOME}/.claude"
+        cp -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" "${HOME}/.claude/CLAUDE.md"
+        echo -e "  Updated ~/.claude/CLAUDE.md"
+    else
+        echo -e "  ${YELLOW}~/.isac/CLAUDE.md not found, skipping${NC}"
     fi
 
     echo ""
@@ -321,9 +357,11 @@ setup_claude_directory() {
 #   │   ├── on-prompt.sh       ← プロンプト入力時に記憶を検索
 #   │   ├── post-edit.sh       ← ファイル編集後に作業履歴を保存
 #   │   └── ...
-#   └── skills/                 ← スラッシュコマンド定義
-#       ├── memory.md          ← /memory コマンド
-#       ├── decide.md          ← /decide コマンド
+#   └── skills/                 ← スラッシュコマンド定義（ディレクトリ構造）
+#       ├── isac-memory/
+#       │   └── SKILL.md       ← /isac-memory コマンド
+#       ├── isac-decide/
+#       │   └── SKILL.md       ← /isac-decide コマンド
 #       └── ...
 #
 #   .claude/                    ← このプロジェクト固有の設定
@@ -437,17 +475,17 @@ SETTINGS_EOF
         # 既存のリンク/ファイルを削除して新しいリンクを作成
         rm -rf .claude/skills/*
 
-        # 各Skillファイルへのシンボリックリンクを作成
-        for skill_file in "${ISAC_GLOBAL_DIR}/skills/"*.md; do
-            if [ -f "${skill_file}" ]; then
-                local filename
-                filename=$(basename "${skill_file}")
-                ln -sf "${skill_file}" ".claude/skills/${filename}"
+        # 各Skillディレクトリへのシンボリックリンクを作成
+        for skill_dir in "${ISAC_GLOBAL_DIR}/skills/"*/; do
+            if [ -d "${skill_dir}" ]; then
+                local dirname
+                dirname=$(basename "${skill_dir}")
+                ln -sf "${skill_dir}" ".claude/skills/${dirname}"
             fi
         done
 
         local skill_count
-        skill_count=$(ls -1 .claude/skills/*.md 2>/dev/null | wc -l | tr -d ' ')
+        skill_count=$(ls -1d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
         echo -e "  ${GREEN}✓${NC} Linked ${skill_count} skills from ~/.isac/skills/"
     fi
 
