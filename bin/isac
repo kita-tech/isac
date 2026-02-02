@@ -77,11 +77,17 @@ cmd_install() {
     # Skills コピー（ディレクトリ構造）
     echo -e "${GREEN}[3/5] Installing skills...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/skills"
+    mkdir -p "${HOME}/.claude/skills"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
         # 既存のスキルを削除して再コピー
         rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
         cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
         echo -e "  Copied skills to ${ISAC_GLOBAL_DIR}/skills/"
+
+        # ~/.claude/skills/ にもコピー（Claude Code CLI が読み込むグローバルスキル）
+        rm -rf "${HOME}/.claude/skills/"isac-*
+        cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${HOME}/.claude/skills/" 2>/dev/null || true
+        echo -e "  Copied skills to ~/.claude/skills/"
     else
         echo -e "${YELLOW}  Warning: Source skills not found${NC}"
     fi
@@ -178,7 +184,13 @@ cmd_update() {
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
         rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
         cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
-        echo -e "  Updated skills"
+        echo -e "  Updated skills in ~/.isac/skills/"
+
+        # ~/.claude/skills/ にもコピー（Claude Code CLI が読み込むグローバルスキル）
+        mkdir -p "${HOME}/.claude/skills"
+        rm -rf "${HOME}/.claude/skills/"isac-*
+        cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${HOME}/.claude/skills/" 2>/dev/null || true
+        echo -e "  Updated skills in ~/.claude/skills/"
     fi
 
     # Agents 更新
