@@ -1,0 +1,28 @@
+version: '3.8'
+
+# テスト専用の docker-compose 設定
+# 認証を有効化し、テスト用の Admin API キーを設定
+
+services:
+  memory:
+    build: .
+    container_name: isac-memory-test
+    ports:
+      - "8100:8000"
+    volumes:
+      - memory-test-data:/data
+    environment:
+      - DATABASE_PATH=/data/memory.db
+      - REQUIRE_AUTH=true
+      - ADMIN_API_KEY=isac_test_admin_key_12345
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 3s
+
+volumes:
+  memory-test-data:
+    name: isac-memory-test-data

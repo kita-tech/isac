@@ -136,3 +136,42 @@ bash tests/run_all_tests.sh
 
 - RDBMSを使用している限り、複数人が同時に記憶を追加しても技術的な同期問題は発生しない（SQLiteのACID特性で保証）
 - チーム開発での課題は「意味的な競合」や「重複データ」であり、アプリケーションレベルの問題
+
+## 記憶の廃止機能
+
+古い記憶と新しい記憶が混在した場合の対策として、記憶の廃止（deprecation）機能を実装。
+
+### 設計方針
+
+1. **タイムスタンプで新しい方を優先**: 検索結果は新しい順にソート
+2. **廃止フラグ**: 古くなった記憶に `deprecated=true` を設定
+3. **後継リンク**: 廃止された記憶に `superseded_by` で後継の記憶IDを記録
+
+### API
+
+```bash
+# 新しい記憶保存時に古い記憶を廃止
+POST /store
+{
+  "content": "新しいAPI仕様...",
+  "supersedes": ["old_memory_id_1", "old_memory_id_2"]
+}
+
+# 手動で記憶を廃止
+PATCH /memory/{id}/deprecate
+{"deprecated": true, "superseded_by": "new_memory_id"}
+
+# 廃止済み記憶を復元
+PATCH /memory/{id}/deprecate
+{"deprecated": false}
+
+# 検索時に廃止済みを含める（履歴確認用）
+GET /search?query=xxx&include_deprecated=true
+GET /context/{project_id}?query=xxx&include_deprecated=true
+```
+
+### 動作
+
+- **デフォルト**: 検索・コンテキスト取得時、廃止済み記憶は除外される
+- **履歴追跡**: `include_deprecated=true` で廃止済みも取得可能
+- **復元可能**: 廃止は論理削除のため、いつでも復元可能
