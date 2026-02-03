@@ -42,12 +42,39 @@ isac/
 ## コマンド
 
 ```bash
-isac install       # グローバルインストール
-isac update        # グローバル設定を更新
-isac init          # プロジェクト初期化
-isac status        # 状態表示
-isac projects      # プロジェクト一覧
-isac switch <id>   # プロジェクト切り替え
+isac install            # グローバルインストール
+isac update             # グローバル設定を更新
+isac init               # プロジェクト初期化
+isac status             # 状態表示（バージョン情報含む）
+isac status --no-cache  # キャッシュを使わず最新情報を取得
+isac projects           # プロジェクト一覧
+isac switch <id>        # プロジェクト切り替え
+```
+
+### バージョン確認
+
+`isac status` はローカルのバージョンとリモートの最新バージョンを比較し、更新の有無を表示する。
+
+```
+Version:
+  Local: b92e259 (2024-02-03)
+  Status: ✓ Up to date        # または ⚠ Update available (3 commits behind)
+  Cache: 15m ago
+
+Recent Changes:
+  b92e259 Extend isac-save-memory...
+  d63b568 Merge pull request #5...
+  0d4c93d Add beginner-friendly...
+```
+
+**キャッシュ**: リモートチェックは24時間キャッシュされる。開発中は以下で無効化：
+
+```bash
+# 一時的に無効化
+isac status --no-cache
+
+# 常に無効化（開発時に便利）
+export ISAC_NO_CACHE=1
 ```
 
 ## コーディング規約

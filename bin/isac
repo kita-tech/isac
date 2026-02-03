@@ -7,6 +7,8 @@ set -e
 VERSION="1.0.0"
 ISAC_GLOBAL_DIR="${ISAC_GLOBAL_DIR:-$HOME/.isac}"
 ISAC_SOURCE_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
+ISAC_CACHE_FILE="${ISAC_GLOBAL_DIR}/.version_cache"
+ISAC_CACHE_TTL=86400  # 24時間（秒）
 
 # カラー出力
 RED='\033[0;31m'
@@ -27,7 +29,7 @@ show_help() {
     echo "  install       グローバルインストール (~/.isac/)"
     echo "  update        グローバル設定を最新に更新"
     echo "  init          現在のディレクトリでプロジェクト初期化"
-    echo "  status        現在のプロジェクト状態を表示"
+    echo "  status        現在のプロジェクト状態とバージョン情報を表示"
     echo "  projects      登録済みプロジェクト一覧"
     echo "  switch <id>   プロジェクトを切り替え"
     echo "  help          このヘルプを表示"
@@ -37,13 +39,20 @@ show_help() {
     echo "  -y, --yes     確認プロンプトをスキップ（すべてYesで回答）"
     echo "  -f, --force   既存ファイルを強制上書き"
     echo ""
+    echo -e "${YELLOW}Status Options:${NC}"
+    echo "  --no-cache    キャッシュを使わずリモートを確認"
+    echo ""
+    echo -e "${YELLOW}Environment Variables:${NC}"
+    echo "  ISAC_NO_CACHE=1   キャッシュを常に無効化（開発時に便利）"
+    echo ""
     echo -e "${YELLOW}Examples:${NC}"
     echo "  isac install              # 初回セットアップ"
     echo "  isac init                 # プロジェクト初期化（対話式）"
     echo "  isac init my-project      # プロジェクト名を指定して初期化"
     echo "  isac init --yes           # 確認なしで初期化（CI/CD向け）"
     echo "  isac init --force         # 既存設定を上書きして再初期化"
-    echo "  isac status               # 状態確認"
+    echo "  isac status               # 状態確認（キャッシュ使用）"
+    echo "  isac status --no-cache    # 最新情報を取得"
     echo "  isac switch my-project    # プロジェクト切り替え"
     echo ""
 }
@@ -51,6 +60,57 @@ show_help() {
 # バージョン表示
 show_version() {
     echo "ISAC version ${VERSION}"
+}
+
+# バージョンキャッシュが有効か確認
+is_cache_valid() {
+    # ISAC_NO_CACHE 環境変数が設定されていたらキャッシュ無効
+    if [ "${ISAC_NO_CACHE:-}" = "1" ]; then
+        return 1
+    fi
+
+    # キャッシュファイルが存在しない
+    if [ ! -f "${ISAC_CACHE_FILE}" ]; then
+        return 1
+    fi
+
+    # キャッシュの有効期限をチェック
+    local cache_time current_time
+    cache_time=$(stat -f %m "${ISAC_CACHE_FILE}" 2>/dev/null || stat -c %Y "${ISAC_CACHE_FILE}" 2>/dev/null || echo 0)
+    current_time=$(date +%s)
+
+    if [ $((current_time - cache_time)) -gt ${ISAC_CACHE_TTL} ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# リモートの最新情報を取得してキャッシュ
+fetch_remote_version() {
+    local remote_head
+
+    # タイムアウト2秒でリモートHEADを取得
+    remote_head=$(git ls-remote --heads origin main 2>/dev/null | cut -f1 | head -c 7 || echo "")
+
+    if [ -n "${remote_head}" ]; then
+        mkdir -p "$(dirname "${ISAC_CACHE_FILE}")"
+        echo "${remote_head}" > "${ISAC_CACHE_FILE}"
+        echo "${remote_head}"
+    else
+        echo ""
+    fi
+}
+
+# キャッシュまたはリモートからバージョン取得
+get_remote_version() {
+    local use_cache="${1:-true}"
+
+    if [ "${use_cache}" = "true" ] && is_cache_valid; then
+        cat "${ISAC_CACHE_FILE}"
+    else
+        fetch_remote_version
+    fi
 }
 
 # グローバルインストール
@@ -538,8 +598,68 @@ SETTINGS_EOF
 
 # 状態表示
 cmd_status() {
+    local use_cache="true"
+
+    # 引数処理
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --no-cache)
+                use_cache="false"
+                ;;
+        esac
+        shift
+    done
+
     echo -e "${BLUE}=== ISAC Status ===${NC}"
     echo ""
+
+    # バージョン情報（Git管理下の場合のみ）
+    if [ -d "${ISAC_SOURCE_DIR}/.git" ]; then
+        local local_head local_date remote_head commits_behind
+        local_head=$(git -C "${ISAC_SOURCE_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        local_date=$(git -C "${ISAC_SOURCE_DIR}" log -1 --format=%cd --date=short 2>/dev/null || echo "unknown")
+
+        echo -e "${YELLOW}Version:${NC}"
+        echo "  Local: ${local_head} (${local_date})"
+
+        # リモートとの比較
+        remote_head=$(get_remote_version "${use_cache}")
+
+        if [ -n "${remote_head}" ]; then
+            if [ "${local_head}" = "${remote_head}" ]; then
+                echo -e "  Status: ${GREEN}✓ Up to date${NC}"
+            else
+                # コミット差を計算
+                git -C "${ISAC_SOURCE_DIR}" fetch origin main --quiet 2>/dev/null || true
+                commits_behind=$(git -C "${ISAC_SOURCE_DIR}" rev-list --count HEAD..origin/main 2>/dev/null || echo "?")
+                echo -e "  Status: ${YELLOW}⚠ Update available${NC} (${commits_behind} commits behind)"
+                echo -e "  Remote: ${remote_head}"
+            fi
+        else
+            echo -e "  Status: ${CYAN}? Could not check remote${NC}"
+        fi
+
+        # キャッシュ状態表示
+        if [ "${use_cache}" = "false" ] || [ "${ISAC_NO_CACHE:-}" = "1" ]; then
+            echo "  Cache: disabled"
+        elif [ -f "${ISAC_CACHE_FILE}" ]; then
+            local cache_age
+            local cache_time current_time
+            cache_time=$(stat -f %m "${ISAC_CACHE_FILE}" 2>/dev/null || stat -c %Y "${ISAC_CACHE_FILE}" 2>/dev/null || echo 0)
+            current_time=$(date +%s)
+            cache_age=$(( (current_time - cache_time) / 60 ))
+            echo "  Cache: ${cache_age}m ago"
+        fi
+
+        # 最近の変更履歴
+        echo ""
+        echo -e "${YELLOW}Recent Changes:${NC}"
+        git -C "${ISAC_SOURCE_DIR}" log --oneline -3 2>/dev/null | while read -r line; do
+            echo "  ${line}"
+        done
+
+        echo ""
+    fi
 
     # 現在のプロジェクト
     local project_id="(not set)"
@@ -746,7 +866,8 @@ case "${1:-}" in
         cmd_init "$@"
         ;;
     status)
-        cmd_status
+        shift
+        cmd_status "$@"
         ;;
     projects)
         cmd_projects
