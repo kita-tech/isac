@@ -86,7 +86,7 @@ ISACのスキルは必ず `isac-` プレフィックスを付けること（他�
 | `/isac-memory` | 記憶の検索・管理 |
 | `/isac-decide` | 決定の記録 |
 | `/isac-suggest` | 状況に応じたSkill提案 |
-| `/isac-save-memory` | AI分類による記憶保存 |
+| `/isac-save-memory` | AI分析による保存形式提案（記憶/Skill/Hooks） |
 | `/isac-notion-design` | Notionからの設計書生成 |
 
 ### Skills ファイル構造
@@ -113,6 +113,85 @@ description: 設計や技術選定を複数のペルソナで検討し、決定�
 # ISAC Review Skill
 ...
 ```
+
+## ナレッジ共有と承認フロー
+
+ISACでは、ナレッジを3つの形式で保存・共有できる：
+
+| 形式 | 用途 | 承認 |
+|------|------|------|
+| 記憶 | 事実・決定・コンテキスト（What/Why） | 不要（即時共有） |
+| Skill | 再利用可能な手順・プロセス（How） | **Git PR必須** |
+| Hooks | 毎回自動実行すべき処理 | **Git PR必須** |
+
+### 記憶の共有
+
+Memory Serviceに保存すると即時にチーム共有される。問題があれば廃止機能で対処。
+
+```bash
+# 保存
+curl -X POST http://localhost:8100/store -d '{"content": "...", ...}'
+
+# 問題があれば廃止
+curl -X PATCH http://localhost:8100/memory/{id}/deprecate -d '{"deprecated": true}'
+```
+
+### Skill/Hooks の共有（Git PRフロー）
+
+Skill/Hooksは自動実行やチーム全体に影響するため、PRレビューを経て共有する。
+
+#### 1. ローカルで作成
+
+```bash
+# Skill の場合
+mkdir -p .claude/skills/isac-[skill-name]/
+# SKILL.md を作成
+
+# Hooks の場合
+# .claude/hooks/[hook-name].sh を作成
+chmod +x .claude/hooks/[hook-name].sh
+```
+
+#### 2. ブランチ作成 & コミット
+
+```bash
+# Skill
+git checkout -b skill/[skill-name]
+git add .claude/skills/isac-[skill-name]/
+git commit -m "Add /isac-[skill-name] skill"
+
+# Hooks
+git checkout -b hooks/[hook-name]
+git add .claude/hooks/[hook-name].sh
+git commit -m "Add [hook-name] hook"
+```
+
+#### 3. PR作成 & レビュー
+
+```bash
+# Skill
+gh pr create --title "Add /isac-[skill-name] skill" --body "..."
+
+# Hooks
+gh pr create --title "Add [hook-name] hook" --body "..."
+```
+
+#### 4. チェックリスト
+
+**Skill の場合:**
+- [ ] SKILL.md のフロントマター（name, description）が正しいか
+- [ ] 手順が再現可能か
+- [ ] 機密情報が含まれていないか
+
+**Hooks の場合:**
+- [ ] 5秒以内に完了するか（禁止事項参照）
+- [ ] エラーハンドリングが適切か
+- [ ] 機密情報が含まれていないか
+- [ ] 既存Hooksとの競合がないか
+
+#### 5. マージ → チーム共有
+
+レビュー承認後、マージすることでチーム全体に共有される。
 
 ## 設計原則
 
