@@ -1,0 +1,249 @@
+# ISAC Memory Service
+
+チーム開発のナレッジを保存・共有するためのサービスです。
+
+## 目次
+
+- [基本概念](#基本概念)
+- [記憶の整理（廃止機能）](#記憶の整理廃止機能)
+- [セットアップ](#セットアップ)
+- [API リファレンス](#api-リファレンス)
+- [テスト](#テスト)
+
+---
+
+## 基本概念
+
+### 記憶（Memory）とは？
+
+ISAC における「記憶」とは、開発中に得られた知識や決定事項を保存したものです。
+
+```
+例：
+- 「APIのレスポンス形式はJSONに統一する」という決定
+- 「認証にはJWTを使用する」という技術選定
+- 「このバグはキャッシュのクリア忘れが原因だった」という学び
+```
+
+### なぜ記憶を保存するのか？
+
+1. **チームでの知識共有**: 誰かが調べたことを全員が活用できる
+2. **過去の決定の追跡**: なぜその設計にしたのかを後から確認できる
+3. **AI アシスタントの精度向上**: Claude がプロジェクト固有の知識を参照できる
+
+---
+
+## 記憶の整理（廃止機能）
+
+### 問題：古い情報と新しい情報の混在
+
+開発を続けていると、以下のような状況が発生します：
+
+```
+古い記憶: 「APIのエンドポイントは /api/v1/users」
+新しい記憶: 「APIのエンドポイントは /api/v2/users に変更」
+```
+
+両方が検索結果に出てくると、どちらが正しいのかわかりません。
+
+### 解決策：記憶の廃止（Deprecation）
+
+ISAC では、古い記憶を「廃止」することで、この問題を解決します。
+
+```
+┌─────────────────┐
+│  古い記憶       │
+│  deprecated=true│──── superseded_by ────▶ ┌─────────────────┐
+│  (非表示)       │                         │  新しい記憶     │
+└─────────────────┘                         │  (検索に出る)   │
+                                            └─────────────────┘
+```
+
+### 廃止の仕組み
+
+| 項目 | 説明 |
+|------|------|
+| `deprecated` | `true` になると、通常の検索結果から除外される |
+| `superseded_by` | 後継の記憶ID。「この記憶の代わりに、こちらを見てね」というリンク |
+
+### 廃止の方法
+
+#### 方法1: 新しい記憶を保存するときに古い記憶を廃止（推奨）
+
+```bash
+# POST /store
+{
+  "content": "APIエンドポイントは /api/v2/users に変更",
+  "type": "decision",
+  "scope": "project",
+  "scope_id": "my-project",
+  "supersedes": ["古い記憶のID"]  # ← これを指定すると自動で廃止
+}
+```
+
+**レスポンス例:**
+```json
+{
+  "id": "新しい記憶のID",
+  "superseded_ids": ["古い記憶のID"],
+  "skipped_supersedes": []
+}
+```
+
+#### 方法2: 手動で廃止
+
+```bash
+# PATCH /memory/{id}/deprecate
+{
+  "deprecated": true,
+  "superseded_by": "新しい記憶のID"  # 任意
+}
+```
+
+### 廃止の取り消し（復元）
+
+間違えて廃止した場合は、簡単に復元できます。
+
+```bash
+# PATCH /memory/{id}/deprecate
+{
+  "deprecated": false
+}
+```
+
+### 廃止済み記憶の確認
+
+履歴を確認したい場合は、検索時に `include_deprecated=true` を指定します。
+
+```bash
+# 廃止済みも含めて検索
+GET /search?query=API&include_deprecated=true
+
+# 廃止済みも含めてコンテキスト取得
+GET /context/my-project?query=API&include_deprecated=true
+```
+
+### 権限について
+
+| 操作 | 誰ができる？ |
+|------|-------------|
+| 自分が作成した記憶を廃止 | 本人 |
+| 他人が作成した記憶を廃止 | 管理者（Admin）のみ |
+| 廃止済み記憶の復元 | 作成者本人 または 管理者 |
+
+### よくある質問
+
+**Q: 廃止された記憶は削除されるの？**
+
+A: いいえ。廃止は「非表示」にするだけで、データは残っています。いつでも復元できます。
+
+**Q: 同じ記憶を複数回廃止しようとしたらどうなる？**
+
+A: すでに廃止済みの記憶は、`skipped_supersedes` に含まれて報告されます。エラーにはなりません。
+
+**Q: 自分の記憶を他の人が勝手に廃止できる？**
+
+A: いいえ。記憶を廃止できるのは、その記憶を作成した本人か、管理者だけです。
+
+**Q: supersedes に自分自身のIDを指定したらどうなる？**
+
+A: 自己参照は自動的にスキップされます。エラーにはなりません。
+
+---
+
+## セットアップ
+
+### 開発環境
+
+```bash
+cd memory-service
+docker compose up -d --build
+```
+
+### 本番環境（認証有効）
+
+```bash
+cd memory-service
+docker compose -f docker-compose.yml up -d --build
+```
+
+環境変数:
+- `REQUIRE_AUTH=true`: 認証を必須にする
+- `ADMIN_API_KEY`: 管理者用APIキー
+
+---
+
+## API リファレンス
+
+### 記憶の保存
+
+```
+POST /store
+```
+
+| パラメータ | 必須 | 説明 |
+|-----------|------|------|
+| `content` | Yes | 記憶の内容 |
+| `type` | Yes | `work`, `decision`, `knowledge` のいずれか |
+| `scope` | Yes | `project` または `global` |
+| `scope_id` | Yes | プロジェクトID |
+| `supersedes` | No | 廃止する記憶IDのリスト |
+| `tags` | No | タグのリスト |
+| `importance` | No | 重要度（1-5、デフォルト3） |
+
+### 記憶の検索
+
+```
+GET /search?query={検索文字列}&scope_id={プロジェクトID}
+```
+
+| パラメータ | 必須 | 説明 |
+|-----------|------|------|
+| `query` | Yes | 検索キーワード |
+| `scope_id` | No | プロジェクトIDで絞り込み |
+| `include_deprecated` | No | `true` で廃止済みも含める |
+
+### 記憶の廃止
+
+```
+PATCH /memory/{id}/deprecate
+```
+
+| パラメータ | 必須 | 説明 |
+|-----------|------|------|
+| `deprecated` | Yes | `true` で廃止、`false` で復元 |
+| `superseded_by` | No | 後継の記憶ID |
+
+### 記憶の削除
+
+```
+DELETE /memory/{id}
+```
+
+---
+
+## テスト
+
+### テスト環境の起動
+
+```bash
+cd memory-service
+docker compose -f docker-compose.test.yml up -d --build
+```
+
+### テストの実行
+
+```bash
+# 廃止機能のテスト
+pytest tests/test_memory_service.py::TestDeprecation -v
+
+# 権限テスト（認証環境必須）
+pytest tests/test_permission.py -v
+```
+
+### テスト環境の停止
+
+```bash
+cd memory-service
+docker compose -f docker-compose.test.yml down -v
+```
