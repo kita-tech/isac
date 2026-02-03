@@ -29,6 +29,20 @@ if [ -z "$QUERY" ]; then
     exit 0
 fi
 
+# isac status コマンドの検出: バージョン情報を含むフル出力を注入
+if echo "$QUERY" | grep -qiE '^isac[[:space:]]+status'; then
+    ISAC_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/bin/isac"
+    if [ -x "$ISAC_BIN" ]; then
+        echo ""
+        echo "## ISAC Status (CLI出力)"
+        echo "以下は \`isac status\` コマンドの実際の出力です。この内容をそのまま表示してください。"
+        echo '```'
+        "$ISAC_BIN" status 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' || true
+        echo '```'
+        echo ""
+    fi
+fi
+
 # Memory Serviceが起動していない場合はスキップ
 if ! curl -s --connect-timeout 1 "$MEMORY_URL/health" > /dev/null 2>&1; then
     exit 0
