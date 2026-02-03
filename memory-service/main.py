@@ -759,10 +759,14 @@ async def store_memory(
             expires_at
         ))
 
-        # supersedes で指定された記憶を廃止
+        # supersedes で指定された記憶を廃止（重複を除外）
         skipped_ids = []
+        processed_ids = set()  # 重複チェック用
         if entry.supersedes:
             for old_id in entry.supersedes:
+                if old_id in processed_ids:
+                    continue  # 重複はスキップ
+                processed_ids.add(old_id)
                 cursor = conn.execute("SELECT id, created_by FROM memories WHERE id = ?", (old_id,))
                 row = cursor.fetchone()
                 if not row:

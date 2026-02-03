@@ -666,6 +666,86 @@ class TestDeprecation:
         assert invalid_id not in data["superseded_ids"]
         assert any(s["id"] == invalid_id for s in data["skipped_supersedes"])
 
+    def test_supersedes_empty_array(self):
+        """空配列を supersedes に指定した場合は何も廃止されない"""
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "空配列テスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "edge-case-test",
+            "supersedes": []
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["superseded_ids"] == []
+        assert data["skipped_supersedes"] == []
+
+    def test_supersedes_self_reference(self):
+        """自分自身を廃止しようとした場合（保存時点では存在しないのでスキップ）"""
+        # 注意: 保存時点では自分のIDはまだ存在しないので、not_found になる
+        fake_self_id = "self-reference-test-id"
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "自己参照テスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "edge-case-test",
+            "supersedes": [fake_self_id]
+        })
+        assert response.status_code == 200
+        data = response.json()
+        # 存在しないのでスキップされる
+        assert fake_self_id not in data["superseded_ids"]
+        assert any(s["id"] == fake_self_id and s["reason"] == "not_found"
+                   for s in data["skipped_supersedes"])
+
+    def test_supersedes_duplicate_ids(self):
+        """同じIDを重複指定した場合は1回だけ廃止される"""
+        # 記憶を作成
+        old_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "重複テスト 古い記憶",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "edge-case-test"
+        })
+        old_id = old_response.json()["id"]
+
+        # 同じIDを2回指定
+        new_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "重複テスト 新しい記憶",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "edge-case-test",
+            "supersedes": [old_id, old_id]
+        })
+        assert new_response.status_code == 200
+        data = new_response.json()
+
+        # 1回だけ廃止されている（重複はカウントされない）
+        assert data["superseded_ids"].count(old_id) == 1
+
+        # 記憶が正しく廃止されている
+        old_memory = requests.get(f"{BASE_URL}/memory/{old_id}").json()
+        assert old_memory["deprecated"] is True
+
+    def test_deprecate_with_invalid_superseded_by(self):
+        """存在しない superseded_by を手動廃止で指定するとエラー"""
+        # 記憶を作成
+        create_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "無効な後継テスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "edge-case-test"
+        })
+        memory_id = create_response.json()["id"]
+
+        # 存在しない superseded_by を指定
+        response = requests.patch(
+            f"{BASE_URL}/memory/{memory_id}/deprecate",
+            json={"deprecated": True, "superseded_by": "nonexistent-id"}
+        )
+        assert response.status_code == 400
+        assert "not found" in response.json()["detail"].lower()
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
