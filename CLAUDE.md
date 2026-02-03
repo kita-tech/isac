@@ -15,6 +15,27 @@ Claude Code CLI + Memory Service による軽量開発支援システム
 - **データベース**: SQLite
 - **コンテナ**: Docker
 
+### MCP サーバー
+
+プロジェクト標準の MCP サーバー（`.claude/settings.yaml` で定義）：
+
+| MCP サーバー | パッケージ | 用途 | 環境変数 |
+|-------------|-----------|------|----------|
+| `notion` | `@notionhq/notion-mcp-server` | Notion ページ取得（`/isac-notion-design`） | `NOTION_API_TOKEN` |
+| `context7` | `@upstash/context7-mcp` | ライブラリの最新ドキュメント参照 | `CONTEXT7_API_KEY` |
+
+#### セットアップ
+
+環境変数を設定すること（シェルの設定ファイル等に追加）：
+
+```bash
+export NOTION_API_TOKEN="ntn_xxxxxxxxxxxxx"
+export CONTEXT7_API_KEY="ctx7sk-xxxxxxxxxxxxx"
+```
+
+- Context7 の API キーは https://context7.com/dashboard で無料取得可能
+- Notion の API キーは https://www.notion.so/my-integrations で Internal Integration を作成して取得
+
 ## ディレクトリ構成
 
 ```
@@ -101,6 +122,7 @@ export ISAC_NO_CACHE=1
 - 外部サービスへの依存を増やさない
 - 軽量モード（Docker不要）は採用しない（チームナレッジ共有が困難なため）
 - リモートブランチへの直接マージ禁止（必ず PR を作成すること）
+- AI による PR のマージ禁止（PR の作成・更新まで。マージは人間が判断すること）
 
 ## Skills 命名規則
 
@@ -321,3 +343,14 @@ GET /context/{project_id}?query=xxx&include_deprecated=true
 - **デフォルト**: 検索・コンテキスト取得時、廃止済み記憶は除外される
 - **履歴追跡**: `include_deprecated=true` で廃止済みも取得可能
 - **復元可能**: 廃止は論理削除のため、いつでも復元可能
+
+### 自動廃止フロー（`/isac-save-memory`）
+
+`/isac-save-memory` で記憶を保存する際、既存記憶との重複を自動検出し廃止を提案する：
+
+1. **検索**: 保存前に `/search` API で同プロジェクト・同カテゴリの既存記憶を検索
+2. **比較判定**: AIが新旧記憶を比較し、🔴廃止すべき / 🟡可能性あり / 🟢不要 の3段階で判定
+3. **ユーザー確認**: 🔴判定がある場合のみ、廃止候補をテーブル形式で提示しユーザーに確認
+4. **保存実行**: `POST /store` の `supersedes` フィールドに廃止対象IDを指定して保存
+
+判定の原則: **迷う場合は廃止しない**（安全側に倒す）
