@@ -403,7 +403,7 @@ EOF
 # MCP設定ブロックを生成（マーカー付き）
 generate_mcp_block() {
     cat << 'MCP_EOF'
-# >>> ISAC-MANAGED: mcpServers (自動管理セクション - isac init --force で更新されます)
+# >>> ISAC-MANAGED: mcpServers (自動管理 - この行を編集・削除しないでください)
 # ============================================================================
 # MCP Servers（共通ツール連携）
 # ============================================================================
@@ -565,6 +565,13 @@ update_settings_mcp() {
     generate_mcp_block > "${mcp_file}"
 
     if grep -q "^# >>> ISAC-MANAGED: mcpServers" "${settings_file}"; then
+        # 終了マーカーの存在を確認
+        if ! grep -q "^# <<< ISAC-MANAGED: mcpServers" "${settings_file}"; then
+            echo -e "  ${YELLOW}⚠${NC} End marker missing in .claude/settings.yaml, skipping update"
+            echo "     Please fix or delete the '# >>> ISAC-MANAGED: mcpServers' line manually."
+            rm -f "${tmp_file}" "${mcp_file}"
+            return
+        fi
         # マーカーが存在 → セクションを差し替え
         awk -v mcp_file="${mcp_file}" '
         /^# >>> ISAC-MANAGED: mcpServers/ {
@@ -587,7 +594,7 @@ update_settings_mcp() {
         echo "     To use ISAC-managed MCP settings, remove your mcpServers section"
         echo "     and run 'isac init --force' again."
     else
-        # mcpServers がない → ファイル先頭のコメント後に挿入
+        # mcpServers がない → 末尾に追記
         {
             echo ""
             cat "${mcp_file}"
