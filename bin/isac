@@ -400,18 +400,51 @@ EOF
     echo "Run 'claude' to start developing with ISAC."
 }
 
-# .claude/ ディレクトリのセットアップ
-setup_claude_directory() {
-    echo ""
-    echo -e "${GREEN}Setting up .claude/ directory...${NC}"
+# MCP設定ブロックを生成（マーカー付き）
+generate_mcp_block() {
+    cat << 'MCP_EOF'
+# >>> ISAC-MANAGED: mcpServers (自動管理 - この行を編集・削除しないでください)
+# ============================================================================
+# MCP Servers（共通ツール連携）
+# ============================================================================
+#
+# 【セットアップ方法】
+# 以下の環境変数をシェルの設定ファイル（~/.zshrc 等）に追加してください：
+#
+#   export NOTION_API_TOKEN="ntn_xxxxxxxxxxxxx"
+#   export CONTEXT7_API_KEY="ctx7sk-xxxxxxxxxxxxx"
+#
+# - Notion API Key: https://www.notion.so/my-integrations で取得
+# - Context7 API Key: https://context7.com/dashboard で無料取得
+#
+# 環境変数が未設定の MCP サーバーは自動的にスキップされます。
+#
+mcpServers:
+  notion:
+    command: npx
+    args: ["-y", "@notionhq/notion-mcp-server"]
+    env:
+      OPENAPI_MCP_HEADERS: '{"Authorization": "Bearer ${NOTION_API_TOKEN}", "Notion-Version": "2022-06-28"}'
+  context7:
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    env:
+      DEFAULT_MINIMUM_TOKENS: "10000"
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+# <<< ISAC-MANAGED: mcpServers
+MCP_EOF
+}
 
-    # ディレクトリ作成
-    mkdir -p .claude/hooks .claude/skills .claude/agents
+# settings.yaml を新規作成（テンプレート + MCP ブロック）
+create_settings_yaml() {
+    local settings_file=".claude/settings.yaml"
+    local mcp_file
+    mcp_file=$(mktemp)
 
-    # ========================================
-    # settings.yaml の作成（初心者向け詳細コメント付き）
-    # ========================================
-    cat > ".claude/settings.yaml" << 'SETTINGS_EOF'
+    generate_mcp_block > "${mcp_file}"
+
+    # --- Part 1: ヘッダーコメント（使い方・仕組みの説明） ---
+    cat > "${settings_file}" << 'SETTINGS_EOF'
 # ============================================================================
 # ISAC Project Settings for Claude Code CLI
 # ============================================================================
@@ -463,11 +496,19 @@ setup_claude_directory() {
 #    hooks/ と skills/ のシンボリックリンクを削除し、
 #    このファイルで直接パスを指定するか、独自のスクリプトを配置します。
 #
+SETTINGS_EOF
+
+    # --- Part 2: MCP ブロック（マーカー付き、isac init --force で更新対象） ---
+    cat "${mcp_file}" >> "${settings_file}"
+
+    # --- Part 3: フッター（カスタマイズ例・FAQ） ---
+    cat >> "${settings_file}" << 'SETTINGS_FOOTER_EOF'
+
 # ============================================================================
 # 設定セクション
 # ============================================================================
 
-# 現在はシンボリックリンクで継承しているため、追加設定は不要です。
+# Hooks と Skills はシンボリックリンクで継承しているため、追加設定は不要です。
 #
 # プロジェクト固有の設定を追加する場合は、以下のようにコメントを外して
 # 必要な設定を追加してください：
@@ -510,9 +551,89 @@ setup_claude_directory() {
 #    各メンバーは `isac init --force` で自分の環境にリンクを再作成できます。
 #
 # ============================================================================
-SETTINGS_EOF
+SETTINGS_FOOTER_EOF
 
+    rm -f "${mcp_file}"
     echo -e "  ${GREEN}✓${NC} Created .claude/settings.yaml"
+}
+
+# 既存の settings.yaml に MCP セクションだけをマージ
+update_settings_mcp() {
+    local settings_file=".claude/settings.yaml"
+    local mcp_file
+    mcp_file=$(mktemp)
+
+    generate_mcp_block > "${mcp_file}"
+
+    # ファイルを1回走査してパターンを判定
+    local has_start_marker has_end_marker has_mcp
+    has_start_marker=$(grep -c "^# >>> ISAC-MANAGED: mcpServers" "${settings_file}" || true)
+    has_end_marker=$(grep -c "^# <<< ISAC-MANAGED: mcpServers" "${settings_file}" || true)
+    has_mcp=$(grep -c "^mcpServers:" "${settings_file}" || true)
+
+    if [ "${has_start_marker}" -gt 0 ]; then
+        # 終了マーカーの存在を確認
+        if [ "${has_end_marker}" -eq 0 ]; then
+            echo -e "  ${YELLOW}⚠${NC} End marker missing in .claude/settings.yaml, skipping update"
+            echo "     Please fix or delete the '# >>> ISAC-MANAGED: mcpServers' line manually."
+            rm -f "${mcp_file}"
+            return
+        fi
+        # マーカーが存在 → セクションを差し替え
+        local tmp_file
+        tmp_file=$(mktemp)
+        awk -v mcp_file="${mcp_file}" '
+        /^# >>> ISAC-MANAGED: mcpServers/ {
+            while ((getline line < mcp_file) > 0) print line
+            close(mcp_file)
+            skip = 1
+            next
+        }
+        /^# <<< ISAC-MANAGED: mcpServers/ {
+            skip = 0
+            next
+        }
+        !skip { print }
+        ' "${settings_file}" > "${tmp_file}"
+        mv "${tmp_file}" "${settings_file}"
+        echo -e "  ${GREEN}✓${NC} Updated mcpServers in .claude/settings.yaml"
+    elif [ "${has_mcp}" -gt 0 ]; then
+        # ユーザー独自の mcpServers がある → 警告のみ
+        echo -e "  ${YELLOW}⚠${NC} mcpServers section exists (user-managed), skipping"
+        echo "     To use ISAC-managed MCP settings, remove your mcpServers section"
+        echo "     and run 'isac init --force' again."
+    else
+        # mcpServers がない → 末尾に追記
+        {
+            echo ""
+            cat "${mcp_file}"
+        } >> "${settings_file}"
+        echo -e "  ${GREEN}✓${NC} Added mcpServers to .claude/settings.yaml"
+    fi
+
+    rm -f "${mcp_file}"
+}
+
+# .claude/ ディレクトリのセットアップ
+setup_claude_directory() {
+    echo ""
+    echo -e "${GREEN}Setting up .claude/ directory...${NC}"
+
+    # ディレクトリ作成
+    mkdir -p .claude/hooks .claude/skills .claude/agents
+
+    # ========================================
+    # settings.yaml の作成/更新
+    # ========================================
+    if [ -f ".claude/settings.yaml" ]; then
+        # 既存ファイルがある場合 → MCP セクションだけマージ
+        update_settings_mcp
+    else
+        # 新規作成（テンプレート + MCP ブロック）
+        create_settings_yaml
+    fi
+
+    echo -e "  ${GREEN}✓${NC} .claude/settings.yaml ready"
 
     # ========================================
     # シンボリックリンクの作成

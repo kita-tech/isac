@@ -70,6 +70,23 @@ assert_contains() {
     fi
 }
 
+# ファイル内に指定パターン（grep正規表現）が存在するか検証
+assert_file_grep() {
+    local file="$1"
+    local pattern="$2"
+    local message="$3"
+
+    if grep -q "${pattern}" "${file}" 2>/dev/null; then
+        echo -e "${GREEN}✓ PASS${NC}: $message"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: $message"
+        echo "  Pattern not found: $pattern"
+        echo "  File: $file"
+        FAILED=$((FAILED + 1))
+    fi
+}
+
 assert_not_empty() {
     local value="$1"
     local message="$2"
@@ -372,6 +389,91 @@ else
     echo -e "${RED}✗ FAIL${NC}: isac init --forceでproject_idが上書きされなかった (got: $FORCE_PROJECT)"
     FAILED=$((FAILED + 1))
 fi
+
+# ----------------------------------------
+# MCP設定マージ テスト
+# ----------------------------------------
+echo ""
+echo "----------------------------------------"
+echo "MCP設定マージ テスト"
+echo "----------------------------------------"
+
+# テスト10: 新規作成で mcpServers が含まれる
+cd "$TEST_DIR"
+rm -rf .claude .isac.yaml
+"$BIN_DIR/isac" init test-mcp-new --yes 2>/dev/null
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^mcpServers:" \
+    "新規作成でmcpServersが含まれる"
+
+# テスト11: 新規作成で ISAC-MANAGED 開始・終了マーカーが含まれる
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^# >>> ISAC-MANAGED: mcpServers" \
+    "新規作成で開始マーカーが含まれる"
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^# <<< ISAC-MANAGED: mcpServers" \
+    "新規作成で終了マーカーが含まれる"
+
+# テスト12: --force で MCP 以外のユーザー設定がマージで保持される
+cd "$TEST_DIR"
+rm -rf .claude .isac.yaml
+"$BIN_DIR/isac" init test-mcp-merge --yes 2>/dev/null
+# テンプレート由来でない独自のカスタム設定を追記
+echo "customSetting: preserved" >> "$TEST_DIR/.claude/settings.yaml"
+# --force で再実行（MCP セクションだけが更新されるはず）
+"$BIN_DIR/isac" init test-mcp-merge --force --yes 2>/dev/null
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "customSetting: preserved" \
+    "--forceで既存の非MCP設定が保持される"
+
+# テスト13: --force で mcpServers が更新される
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^mcpServers:" \
+    "--forceでmcpServersが更新される"
+
+# テスト14: マーカーなし既存ファイルへの MCP 追記
+cd "$TEST_DIR"
+rm -rf .claude .isac.yaml
+mkdir -p .claude
+cat > "$TEST_DIR/.claude/settings.yaml" << 'TESTEOF'
+# 既存の設定
+hooks:
+  UserPromptSubmit:
+    - type: command
+      command: "echo test"
+TESTEOF
+"$BIN_DIR/isac" init test-mcp-append --force --yes 2>/dev/null
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^mcpServers:" \
+    "マーカーなし既存ファイルにMCPが追記される"
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^hooks:" \
+    "マーカーなし既存ファイルの既存設定が保持される"
+
+# テスト15: ユーザー独自 mcpServers がある場合スキップされる
+cd "$TEST_DIR"
+rm -rf .claude .isac.yaml
+mkdir -p .claude
+cat > "$TEST_DIR/.claude/settings.yaml" << 'TESTEOF'
+mcpServers:
+  my-custom:
+    command: custom-tool
+TESTEOF
+SKIP_OUTPUT=$("$BIN_DIR/isac" init test-mcp-skip --force --yes 2>&1)
+assert_contains "$SKIP_OUTPUT" "user-managed" \
+    "ユーザー独自mcpServersでスキップ警告が出る"
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "my-custom" \
+    "ユーザー独自mcpServersが変更されない"
+
+# テスト16: 終了マーカー欠落時にファイルが壊れない
+cd "$TEST_DIR"
+rm -rf .claude .isac.yaml
+mkdir -p .claude
+cat > "$TEST_DIR/.claude/settings.yaml" << 'TESTEOF'
+# >>> ISAC-MANAGED: mcpServers (自動管理 - この行を編集・削除しないでください)
+mcpServers:
+  old: true
+# 終了マーカーが欠落
+customKey: must-survive
+TESTEOF
+BROKEN_OUTPUT=$("$BIN_DIR/isac" init test-mcp-broken --force --yes 2>&1)
+assert_contains "$BROKEN_OUTPUT" "End marker missing" \
+    "終了マーカー欠落で警告が出る"
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "customKey: must-survive" \
+    "終了マーカー欠落時にファイルが保護される"
 
 echo ""
 
