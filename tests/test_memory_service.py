@@ -369,5 +369,184 @@ class TestImport:
         assert data["imported"] == 2
 
 
+class TestDeprecation:
+    """記憶の廃止機能のテスト"""
+
+    def test_store_with_supersedes(self):
+        """supersedes パラメータで古い記憶を廃止できる"""
+        # 古い記憶を作成
+        old_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "古いAPI仕様: GET /users は非推奨",
+            "type": "knowledge",
+            "scope": "project",
+            "scope_id": "deprecation-test"
+        })
+        old_id = old_response.json()["id"]
+
+        # 新しい記憶で古い記憶を廃止
+        new_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "新しいAPI仕様: GET /v2/users を使用する",
+            "type": "knowledge",
+            "scope": "project",
+            "scope_id": "deprecation-test",
+            "supersedes": [old_id]
+        })
+        assert new_response.status_code == 200
+        new_data = new_response.json()
+        assert old_id in new_data["superseded_ids"]
+
+        # 古い記憶が廃止されていることを確認
+        old_memory = requests.get(f"{BASE_URL}/memory/{old_id}").json()
+        assert old_memory["deprecated"] is True
+        assert old_memory["superseded_by"] == new_data["id"]
+
+    def test_search_excludes_deprecated_by_default(self):
+        """検索はデフォルトで廃止済み記憶を除外する"""
+        unique_id = str(uuid.uuid4())[:8]
+
+        # 古い記憶を作成
+        old_response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"廃止テスト {unique_id} 古い",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test"
+        })
+        old_id = old_response.json()["id"]
+
+        # 新しい記憶で古い記憶を廃止
+        requests.post(f"{BASE_URL}/store", json={
+            "content": f"廃止テスト {unique_id} 新しい",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test",
+            "supersedes": [old_id]
+        })
+
+        # デフォルト検索では廃止済みが除外される
+        response = requests.get(f"{BASE_URL}/search", params={"query": unique_id})
+        data = response.json()
+        memory_ids = [m["id"] for m in data["memories"]]
+        assert old_id not in memory_ids
+
+    def test_search_includes_deprecated_when_requested(self):
+        """include_deprecated=true で廃止済み記憶も取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+
+        # 古い記憶を作成
+        old_response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"廃止テスト2 {unique_id} 古い",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test"
+        })
+        old_id = old_response.json()["id"]
+
+        # 新しい記憶で古い記憶を廃止
+        requests.post(f"{BASE_URL}/store", json={
+            "content": f"廃止テスト2 {unique_id} 新しい",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test",
+            "supersedes": [old_id]
+        })
+
+        # include_deprecated=true で廃止済みも取得
+        response = requests.get(f"{BASE_URL}/search", params={
+            "query": unique_id,
+            "include_deprecated": "true"
+        })
+        data = response.json()
+        memory_ids = [m["id"] for m in data["memories"]]
+        assert old_id in memory_ids
+
+    def test_deprecate_memory_manually(self):
+        """手動で記憶を廃止できる"""
+        # 記憶を作成
+        create_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "手動廃止テスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test"
+        })
+        memory_id = create_response.json()["id"]
+
+        # 廃止
+        response = requests.patch(
+            f"{BASE_URL}/memory/{memory_id}/deprecate",
+            json={"deprecated": True}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deprecated"] is True
+
+        # 確認
+        memory = requests.get(f"{BASE_URL}/memory/{memory_id}").json()
+        assert memory["deprecated"] is True
+
+    def test_restore_deprecated_memory(self):
+        """廃止した記憶を復元できる"""
+        # 記憶を作成
+        create_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "復元テスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test"
+        })
+        memory_id = create_response.json()["id"]
+
+        # 廃止
+        requests.patch(
+            f"{BASE_URL}/memory/{memory_id}/deprecate",
+            json={"deprecated": True}
+        )
+
+        # 復元
+        response = requests.patch(
+            f"{BASE_URL}/memory/{memory_id}/deprecate",
+            json={"deprecated": False}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deprecated"] is False
+
+        # 確認
+        memory = requests.get(f"{BASE_URL}/memory/{memory_id}").json()
+        assert memory["deprecated"] is False
+        assert memory["superseded_by"] is None
+
+    def test_context_excludes_deprecated_by_default(self):
+        """コンテキスト取得はデフォルトで廃止済み記憶を除外する"""
+        unique_id = str(uuid.uuid4())[:8]
+
+        # 古い記憶を作成
+        old_response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"コンテキスト廃止テスト {unique_id}",
+            "type": "decision",
+            "scope": "project",
+            "scope_id": "context-deprecation-test",
+            "importance": 0.9
+        })
+        old_id = old_response.json()["id"]
+
+        # 廃止
+        requests.patch(
+            f"{BASE_URL}/memory/{old_id}/deprecate",
+            json={"deprecated": True}
+        )
+
+        # コンテキスト取得（デフォルト）
+        response = requests.get(
+            f"{BASE_URL}/context/context-deprecation-test",
+            params={"query": unique_id}
+        )
+        data = response.json()
+
+        # 廃止済みが含まれていないことを確認
+        all_memory_ids = []
+        for key in ["global_knowledge", "team_knowledge", "project_decisions", "project_recent"]:
+            all_memory_ids.extend([m["id"] for m in data[key]])
+        assert old_id not in all_memory_ids
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

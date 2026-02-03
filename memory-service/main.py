@@ -109,6 +109,7 @@ class MemoryEntry(BaseModel):
     metadata: dict = Field(default_factory=dict)
     category: Optional[MemoryCategory] = None  # カテゴリ（任意）
     tags: list[str] = Field(default_factory=list)  # タグ（複数可）
+    supersedes: list[str] = Field(default_factory=list)  # 廃止対象の記憶IDリスト
 
 
 class MemoryResponse(BaseModel):
@@ -125,6 +126,8 @@ class MemoryResponse(BaseModel):
     created_by: Optional[str]
     created_at: str
     tokens: int
+    deprecated: bool = False
+    superseded_by: Optional[str] = None
 
 
 class ContextResponse(BaseModel):
@@ -142,6 +145,7 @@ class StoreResponse(BaseModel):
     category: Optional[str]
     tags: list[str]
     message: str
+    superseded_ids: list[str] = Field(default_factory=list)  # 廃止された記憶のIDリスト
 
 
 class TeamCreate(BaseModel):
@@ -417,6 +421,16 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # カラムが既に存在する場合は無視
 
+        # deprecated, superseded_by カラムの追加（記憶の廃止機能）
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN deprecated BOOLEAN DEFAULT FALSE")
+        except sqlite3.OperationalError:
+            pass  # カラムが既に存在する場合は無視
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN superseded_by TEXT")
+        except sqlite3.OperationalError:
+            pass  # カラムが既に存在する場合は無視
+
         # 監査ログ
         conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_logs (
@@ -437,6 +451,7 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_deprecated ON memories(deprecated)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)")
 
@@ -651,7 +666,9 @@ def row_to_memory(row: sqlite3.Row) -> MemoryResponse:
         tags=tags,
         created_by=row["created_by"],
         created_at=row["created_at"],
-        tokens=count_tokens(content)
+        tokens=count_tokens(content),
+        deprecated=bool(row["deprecated"]) if "deprecated" in row.keys() else False,
+        superseded_by=row["superseded_by"] if "superseded_by" in row.keys() else None
     )
 
 
@@ -720,10 +737,11 @@ async def store_memory(
     auto_tags = auto_extract_tags(entry.content, file_path)
     all_tags = list(set(entry.tags + auto_tags))[:10]  # 最大10個
 
+    superseded_ids = []
     with get_db() as conn:
         conn.execute("""
-            INSERT INTO memories (id, scope, scope_id, type, content, summary, importance, metadata, category, tags, created_by, created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO memories (id, scope, scope_id, type, content, summary, importance, metadata, category, tags, created_by, created_at, expires_at, deprecated)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)
         """, (
             memory_id,
             entry.scope.value,
@@ -739,6 +757,19 @@ async def store_memory(
             now,
             expires_at
         ))
+
+        # supersedes で指定された記憶を廃止
+        if entry.supersedes:
+            for old_id in entry.supersedes:
+                cursor = conn.execute("SELECT id FROM memories WHERE id = ?", (old_id,))
+                if cursor.fetchone():
+                    conn.execute("""
+                        UPDATE memories
+                        SET deprecated = TRUE, superseded_by = ?
+                        WHERE id = ?
+                    """, (memory_id, old_id))
+                    superseded_ids.append(old_id)
+
         conn.commit()
 
     # 監査ログ
@@ -747,7 +778,7 @@ async def store_memory(
         action="store_memory",
         resource_type="memory",
         resource_id=memory_id,
-        details={"scope": entry.scope.value, "type": entry.type.value},
+        details={"scope": entry.scope.value, "type": entry.type.value, "superseded": superseded_ids},
         ip_address=client_ip
     )
 
@@ -757,7 +788,8 @@ async def store_memory(
         scope=entry.scope,
         category=category,
         tags=all_tags,
-        message=f"Memory stored ({entry.scope.value}/{entry.type.value})"
+        message=f"Memory stored ({entry.scope.value}/{entry.type.value})",
+        superseded_ids=superseded_ids
     )
 
 
@@ -767,6 +799,7 @@ async def get_context(
     query: str = Query(..., description="検索クエリ"),
     max_tokens: int = Query(2000, description="最大トークン数"),
     category: Optional[MemoryCategory] = Query(None, description="カテゴリで優先フィルタ"),
+    include_deprecated: bool = Query(False, description="廃止済み記憶を含めるか"),
     request: Request = None,
     current_user: Optional[CurrentUser] = Depends(get_current_user)
 ):
@@ -813,12 +846,16 @@ async def get_context(
 
         return matched if matched else memories[:5]
 
+    # deprecated フィルタ条件
+    deprecated_filter = "" if include_deprecated else "AND (deprecated IS NULL OR deprecated = FALSE)"
+
     with get_db() as conn:
         # Global knowledge
-        cursor = conn.execute("""
+        cursor = conn.execute(f"""
             SELECT * FROM memories
             WHERE scope = 'global'
             AND (expires_at IS NULL OR expires_at > ?)
+            {deprecated_filter}
             ORDER BY importance DESC, created_at DESC
             LIMIT 20
         """, (now,))
@@ -828,10 +865,11 @@ async def get_context(
         # Team knowledge
         team_knowledge = []
         if team_id:
-            cursor = conn.execute("""
+            cursor = conn.execute(f"""
                 SELECT * FROM memories
                 WHERE scope = 'team' AND scope_id = ?
                 AND (expires_at IS NULL OR expires_at > ?)
+                {deprecated_filter}
                 ORDER BY importance DESC, created_at DESC
                 LIMIT 20
             """, (team_id, now))
@@ -839,10 +877,11 @@ async def get_context(
             team_knowledge = select_within_budget(filter_by_query(team_raw), team_budget)
 
         # Project decisions
-        cursor = conn.execute("""
+        cursor = conn.execute(f"""
             SELECT * FROM memories
             WHERE scope = 'project' AND scope_id = ? AND type = 'decision'
             AND (expires_at IS NULL OR expires_at > ?)
+            {deprecated_filter}
             ORDER BY importance DESC, created_at DESC
             LIMIT 20
         """, (project_id, now))
@@ -850,10 +889,11 @@ async def get_context(
         project_decisions = select_within_budget(filter_by_query(decisions_raw), decision_budget)
 
         # Project recent work
-        cursor = conn.execute("""
+        cursor = conn.execute(f"""
             SELECT * FROM memories
             WHERE scope = 'project' AND scope_id = ? AND type IN ('work', 'knowledge')
             AND (expires_at IS NULL OR expires_at > ?)
+            {deprecated_filter}
             ORDER BY created_at DESC
             LIMIT 20
         """, (project_id, now))
@@ -891,6 +931,7 @@ async def search_memories(
     type: Optional[MemoryType] = Query(None),
     category: Optional[MemoryCategory] = Query(None, description="カテゴリでフィルタ"),
     tags: Optional[str] = Query(None, description="タグでフィルタ（カンマ区切り）"),
+    include_deprecated: bool = Query(False, description="廃止済み記憶を含めるか"),
     limit: int = Query(10, le=50),
     current_user: Optional[CurrentUser] = Depends(get_current_user)
 ):
@@ -903,6 +944,10 @@ async def search_memories(
             WHERE (expires_at IS NULL OR expires_at > ?)
         """
         params: list = [now]
+
+        # デフォルトで廃止済み記憶を除外
+        if not include_deprecated:
+            sql += " AND (deprecated IS NULL OR deprecated = FALSE)"
 
         if scope:
             sql += " AND scope = ?"
@@ -1101,6 +1146,74 @@ async def delete_memory(
         )
 
         return {"message": "Memory deleted", "id": memory_id}
+
+
+class DeprecateRequest(BaseModel):
+    """記憶の廃止/復元リクエスト"""
+    deprecated: bool = Field(..., description="廃止する場合はTrue、復元する場合はFalse")
+    superseded_by: Optional[str] = Field(None, description="後継の記憶ID（廃止時のみ）")
+
+
+@app.patch("/memory/{memory_id}/deprecate")
+async def deprecate_memory(
+    memory_id: str,
+    request: DeprecateRequest,
+    current_user: Optional[CurrentUser] = Depends(get_current_user)
+):
+    """記憶を廃止または復元"""
+    with get_db() as conn:
+        # 記憶を取得
+        cursor = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Memory not found")
+
+        # 作成者または管理者のみ操作可能
+        if current_user and not current_user.is_admin:
+            if row["created_by"] != current_user.user_id:
+                raise HTTPException(status_code=403, detail="Cannot modify others' memories")
+
+        # 廃止/復元を実行
+        if request.deprecated:
+            # superseded_by が指定されている場合、存在確認
+            if request.superseded_by:
+                cursor = conn.execute("SELECT id FROM memories WHERE id = ?", (request.superseded_by,))
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=400, detail="Superseding memory not found")
+
+            conn.execute("""
+                UPDATE memories
+                SET deprecated = TRUE, superseded_by = ?
+                WHERE id = ?
+            """, (request.superseded_by, memory_id))
+            action = "deprecate_memory"
+            message = "Memory deprecated"
+        else:
+            conn.execute("""
+                UPDATE memories
+                SET deprecated = FALSE, superseded_by = NULL
+                WHERE id = ?
+            """, (memory_id,))
+            action = "restore_memory"
+            message = "Memory restored"
+
+        conn.commit()
+
+        log_audit(
+            user_id=current_user.user_id if current_user else None,
+            action=action,
+            resource_type="memory",
+            resource_id=memory_id,
+            details={"superseded_by": request.superseded_by} if request.deprecated else None
+        )
+
+        return {
+            "id": memory_id,
+            "message": message,
+            "deprecated": request.deprecated,
+            "superseded_by": request.superseded_by if request.deprecated else None
+        }
 
 
 # ============================================================
