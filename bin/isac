@@ -443,6 +443,7 @@ create_settings_yaml() {
 
     generate_mcp_block > "${mcp_file}"
 
+    # --- Part 1: ヘッダーコメント（使い方・仕組みの説明） ---
     cat > "${settings_file}" << 'SETTINGS_EOF'
 # ============================================================================
 # ISAC Project Settings for Claude Code CLI
@@ -497,9 +498,10 @@ create_settings_yaml() {
 #
 SETTINGS_EOF
 
-    # MCP ブロックをテンプレートに追記
+    # --- Part 2: MCP ブロック（マーカー付き、isac init --force で更新対象） ---
     cat "${mcp_file}" >> "${settings_file}"
 
+    # --- Part 3: フッター（カスタマイズ例・FAQ） ---
     cat >> "${settings_file}" << 'SETTINGS_FOOTER_EOF'
 
 # ============================================================================
@@ -558,21 +560,28 @@ SETTINGS_FOOTER_EOF
 # 既存の settings.yaml に MCP セクションだけをマージ
 update_settings_mcp() {
     local settings_file=".claude/settings.yaml"
-    local tmp_file mcp_file
-    tmp_file=$(mktemp)
+    local mcp_file
     mcp_file=$(mktemp)
 
     generate_mcp_block > "${mcp_file}"
 
-    if grep -q "^# >>> ISAC-MANAGED: mcpServers" "${settings_file}"; then
+    # ファイルを1回走査してパターンを判定
+    local has_start_marker has_end_marker has_mcp
+    has_start_marker=$(grep -c "^# >>> ISAC-MANAGED: mcpServers" "${settings_file}" || true)
+    has_end_marker=$(grep -c "^# <<< ISAC-MANAGED: mcpServers" "${settings_file}" || true)
+    has_mcp=$(grep -c "^mcpServers:" "${settings_file}" || true)
+
+    if [ "${has_start_marker}" -gt 0 ]; then
         # 終了マーカーの存在を確認
-        if ! grep -q "^# <<< ISAC-MANAGED: mcpServers" "${settings_file}"; then
+        if [ "${has_end_marker}" -eq 0 ]; then
             echo -e "  ${YELLOW}⚠${NC} End marker missing in .claude/settings.yaml, skipping update"
             echo "     Please fix or delete the '# >>> ISAC-MANAGED: mcpServers' line manually."
-            rm -f "${tmp_file}" "${mcp_file}"
+            rm -f "${mcp_file}"
             return
         fi
         # マーカーが存在 → セクションを差し替え
+        local tmp_file
+        tmp_file=$(mktemp)
         awk -v mcp_file="${mcp_file}" '
         /^# >>> ISAC-MANAGED: mcpServers/ {
             while ((getline line < mcp_file) > 0) print line
@@ -588,7 +597,7 @@ update_settings_mcp() {
         ' "${settings_file}" > "${tmp_file}"
         mv "${tmp_file}" "${settings_file}"
         echo -e "  ${GREEN}✓${NC} Updated mcpServers in .claude/settings.yaml"
-    elif grep -q "^mcpServers:" "${settings_file}"; then
+    elif [ "${has_mcp}" -gt 0 ]; then
         # ユーザー独自の mcpServers がある → 警告のみ
         echo -e "  ${YELLOW}⚠${NC} mcpServers section exists (user-managed), skipping"
         echo "     To use ISAC-managed MCP settings, remove your mcpServers section"
@@ -602,7 +611,7 @@ update_settings_mcp() {
         echo -e "  ${GREEN}✓${NC} Added mcpServers to .claude/settings.yaml"
     fi
 
-    rm -f "${tmp_file}" "${mcp_file}"
+    rm -f "${mcp_file}"
 }
 
 # .claude/ ディレクトリのセットアップ

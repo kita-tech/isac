@@ -70,6 +70,23 @@ assert_contains() {
     fi
 }
 
+# ファイル内に指定パターン（grep正規表現）が存在するか検証
+assert_file_grep() {
+    local file="$1"
+    local pattern="$2"
+    local message="$3"
+
+    if grep -q "${pattern}" "${file}" 2>/dev/null; then
+        echo -e "${GREEN}✓ PASS${NC}: $message"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: $message"
+        echo "  Pattern not found: $pattern"
+        echo "  File: $file"
+        FAILED=$((FAILED + 1))
+    fi
+}
+
 assert_not_empty() {
     local value="$1"
     local message="$2"
@@ -385,49 +402,29 @@ echo "----------------------------------------"
 cd "$TEST_DIR"
 rm -rf .claude .isac.yaml
 "$BIN_DIR/isac" init test-mcp-new --yes 2>/dev/null
-if grep -q "^mcpServers:" "$TEST_DIR/.claude/settings.yaml"; then
-    echo -e "${GREEN}✓ PASS${NC}: 新規作成でmcpServersが含まれる"
-    PASSED=$((PASSED + 1))
-else
-    echo -e "${RED}✗ FAIL${NC}: 新規作成でmcpServersが含まれない"
-    FAILED=$((FAILED + 1))
-fi
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^mcpServers:" \
+    "新規作成でmcpServersが含まれる"
 
-# テスト11: 新規作成で ISAC-MANAGED マーカーが含まれる
-if grep -q "^# >>> ISAC-MANAGED: mcpServers" "$TEST_DIR/.claude/settings.yaml" && \
-   grep -q "^# <<< ISAC-MANAGED: mcpServers" "$TEST_DIR/.claude/settings.yaml"; then
-    echo -e "${GREEN}✓ PASS${NC}: 新規作成でISAC-MANAGEDマーカーが含まれる"
-    PASSED=$((PASSED + 1))
-else
-    echo -e "${RED}✗ FAIL${NC}: 新規作成でISAC-MANAGEDマーカーが含まれない"
-    FAILED=$((FAILED + 1))
-fi
+# テスト11: 新規作成で ISAC-MANAGED 開始・終了マーカーが含まれる
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^# >>> ISAC-MANAGED: mcpServers" \
+    "新規作成で開始マーカーが含まれる"
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^# <<< ISAC-MANAGED: mcpServers" \
+    "新規作成で終了マーカーが含まれる"
 
-# テスト12: --force で既存の非MCP設定が保持される
+# テスト12: --force で MCP 以外のユーザー設定がマージで保持される
 cd "$TEST_DIR"
 rm -rf .claude .isac.yaml
 "$BIN_DIR/isac" init test-mcp-merge --yes 2>/dev/null
-# カスタム設定を追記
+# テンプレート由来でない独自のカスタム設定を追記
 echo "customSetting: preserved" >> "$TEST_DIR/.claude/settings.yaml"
-# --force で再実行
+# --force で再実行（MCP セクションだけが更新されるはず）
 "$BIN_DIR/isac" init test-mcp-merge --force --yes 2>/dev/null
-if grep -q "customSetting: preserved" "$TEST_DIR/.claude/settings.yaml"; then
-    echo -e "${GREEN}✓ PASS${NC}: --forceで既存の非MCP設定が保持される"
-    PASSED=$((PASSED + 1))
-else
-    echo -e "${RED}✗ FAIL${NC}: --forceで既存の非MCP設定が消えた"
-    FAILED=$((FAILED + 1))
-fi
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "customSetting: preserved" \
+    "--forceで既存の非MCP設定が保持される"
 
 # テスト13: --force で mcpServers が更新される
-if grep -q "^mcpServers:" "$TEST_DIR/.claude/settings.yaml" && \
-   grep -q "^# >>> ISAC-MANAGED: mcpServers" "$TEST_DIR/.claude/settings.yaml"; then
-    echo -e "${GREEN}✓ PASS${NC}: --forceでmcpServersが更新される"
-    PASSED=$((PASSED + 1))
-else
-    echo -e "${RED}✗ FAIL${NC}: --forceでmcpServersが更新されない"
-    FAILED=$((FAILED + 1))
-fi
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^mcpServers:" \
+    "--forceでmcpServersが更新される"
 
 # テスト14: マーカーなし既存ファイルへの MCP 追記
 cd "$TEST_DIR"
@@ -441,16 +438,12 @@ hooks:
       command: "echo test"
 TESTEOF
 "$BIN_DIR/isac" init test-mcp-append --force --yes 2>/dev/null
-if grep -q "^mcpServers:" "$TEST_DIR/.claude/settings.yaml" && \
-   grep -q "^hooks:" "$TEST_DIR/.claude/settings.yaml"; then
-    echo -e "${GREEN}✓ PASS${NC}: マーカーなし既存ファイルにMCPが追記される"
-    PASSED=$((PASSED + 1))
-else
-    echo -e "${RED}✗ FAIL${NC}: マーカーなし既存ファイルへのMCP追記に失敗"
-    FAILED=$((FAILED + 1))
-fi
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^mcpServers:" \
+    "マーカーなし既存ファイルにMCPが追記される"
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "^hooks:" \
+    "マーカーなし既存ファイルの既存設定が保持される"
 
-# テスト15: ユーザー独自mcpServersがある場合スキップされる
+# テスト15: ユーザー独自 mcpServers がある場合スキップされる
 cd "$TEST_DIR"
 rm -rf .claude .isac.yaml
 mkdir -p .claude
@@ -460,14 +453,10 @@ mcpServers:
     command: custom-tool
 TESTEOF
 SKIP_OUTPUT=$("$BIN_DIR/isac" init test-mcp-skip --force --yes 2>&1)
-if echo "$SKIP_OUTPUT" | grep -q "user-managed" && \
-   grep -q "my-custom" "$TEST_DIR/.claude/settings.yaml"; then
-    echo -e "${GREEN}✓ PASS${NC}: ユーザー独自mcpServersがスキップされる"
-    PASSED=$((PASSED + 1))
-else
-    echo -e "${RED}✗ FAIL${NC}: ユーザー独自mcpServersがスキップされない"
-    FAILED=$((FAILED + 1))
-fi
+assert_contains "$SKIP_OUTPUT" "user-managed" \
+    "ユーザー独自mcpServersでスキップ警告が出る"
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "my-custom" \
+    "ユーザー独自mcpServersが変更されない"
 
 # テスト16: 終了マーカー欠落時にファイルが壊れない
 cd "$TEST_DIR"
@@ -481,14 +470,10 @@ mcpServers:
 customKey: must-survive
 TESTEOF
 BROKEN_OUTPUT=$("$BIN_DIR/isac" init test-mcp-broken --force --yes 2>&1)
-if echo "$BROKEN_OUTPUT" | grep -q "End marker missing" && \
-   grep -q "customKey: must-survive" "$TEST_DIR/.claude/settings.yaml"; then
-    echo -e "${GREEN}✓ PASS${NC}: 終了マーカー欠落時にファイルが保護される"
-    PASSED=$((PASSED + 1))
-else
-    echo -e "${RED}✗ FAIL${NC}: 終了マーカー欠落時にファイルが壊れた"
-    FAILED=$((FAILED + 1))
-fi
+assert_contains "$BROKEN_OUTPUT" "End marker missing" \
+    "終了マーカー欠落で警告が出る"
+assert_file_grep "$TEST_DIR/.claude/settings.yaml" "customKey: must-survive" \
+    "終了マーカー欠落時にファイルが保護される"
 
 echo ""
 
