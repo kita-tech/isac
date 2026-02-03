@@ -42,12 +42,39 @@ isac/
 ## コマンド
 
 ```bash
-isac install       # グローバルインストール
-isac update        # グローバル設定を更新
-isac init          # プロジェクト初期化
-isac status        # 状態表示
-isac projects      # プロジェクト一覧
-isac switch <id>   # プロジェクト切り替え
+isac install            # グローバルインストール
+isac update             # グローバル設定を更新
+isac init               # プロジェクト初期化
+isac status             # 状態表示（バージョン情報含む）
+isac status --no-cache  # キャッシュを使わず最新情報を取得
+isac projects           # プロジェクト一覧
+isac switch <id>        # プロジェクト切り替え
+```
+
+### バージョン確認
+
+`isac status` はローカルのバージョンとリモートの最新バージョンを比較し、更新の有無を表示する。
+
+```
+Version:
+  Local: b92e259 (2024-02-03)
+  Status: ✓ Up to date        # または ⚠ Update available (3 commits behind)
+  Cache: 15m ago
+
+Recent Changes:
+  b92e259 Extend isac-save-memory...
+  d63b568 Merge pull request #5...
+  0d4c93d Add beginner-friendly...
+```
+
+**キャッシュ**: リモートチェックは24時間キャッシュされる。開発中は以下で無効化：
+
+```bash
+# 一時的に無効化
+isac status --no-cache
+
+# 常に無効化（開発時に便利）
+export ISAC_NO_CACHE=1
 ```
 
 ## コーディング規約
@@ -200,6 +227,44 @@ gh pr create --title "Add [hook-name] hook" --body "..."
 3. **高速起動**: 即座に利用可能であること
 4. **Claude Code CLI ファースト**: CLI の機能を最大限活用
 5. **セキュリティ**: 機密情報は自動フィルタリング
+6. **CLAUDE.mdを必ずコンテキストに含める**: ルール、規約、決定事項が集約されている
+
+## 開発フロー（必須）
+
+機能を実装する際は、以下のフローを**必ず**遵守すること：
+
+### 1. テストコードの作成
+
+機能実装後、テストコードを作成し **10人のペルソナでレビュー** する。
+
+```
+/isac-review テストケースの網羅性 --team
+```
+
+**チェック観点:**
+- 正常系・異常系の網羅
+- 境界値テスト
+- エラーハンドリング
+- 既存テストとの整合性
+
+### 2. ドキュメントの更新
+
+実装完了後、関連ドキュメントを**必ず更新**する：
+
+| 変更内容 | 更新対象 |
+|----------|----------|
+| CLI コマンド追加・変更 | CLAUDE.md（コマンドセクション） |
+| Skill 追加・変更 | CLAUDE.md（Skills一覧）、SKILL.md |
+| Hooks 追加・変更 | CLAUDE.md（ディレクトリ構成） |
+| API 追加・変更 | CLAUDE.md（API セクション）、memory-service/README.md |
+| 設計決定 | CLAUDE.md（技術的決定事項） |
+
+### 3. PR作成前チェックリスト
+
+- [ ] テストコードを作成した
+- [ ] テストが全て通過する（`bash tests/run_all_tests.sh`）
+- [ ] ドキュメントを更新した
+- [ ] 10人のペルソナでテストケースをレビューした（重要な機能の場合）
 
 ## テスト
 
