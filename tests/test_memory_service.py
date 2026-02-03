@@ -308,7 +308,7 @@ class TestMemoryOperations:
         memory_id = create_response.json()["id"]
 
         # IDで取得
-        response = requests.get(f"{BASE_URL}/memories/{memory_id}")
+        response = requests.get(f"{BASE_URL}/memory/{memory_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == memory_id
@@ -316,7 +316,7 @@ class TestMemoryOperations:
 
     def test_get_memory_not_found(self):
         """存在しないIDはエラー"""
-        response = requests.get(f"{BASE_URL}/memories/nonexistent-id")
+        response = requests.get(f"{BASE_URL}/memory/nonexistent-id")
         assert response.status_code == 404
 
     def test_delete_memory(self):
@@ -331,11 +331,11 @@ class TestMemoryOperations:
         memory_id = create_response.json()["id"]
 
         # 削除
-        response = requests.delete(f"{BASE_URL}/memories/{memory_id}")
+        response = requests.delete(f"{BASE_URL}/memory/{memory_id}")
         assert response.status_code == 200
 
         # 削除後は取得できない
-        response = requests.get(f"{BASE_URL}/memories/{memory_id}")
+        response = requests.get(f"{BASE_URL}/memory/{memory_id}")
         assert response.status_code == 404
 
 
@@ -546,6 +546,125 @@ class TestDeprecation:
         for key in ["global_knowledge", "team_knowledge", "project_decisions", "project_recent"]:
             all_memory_ids.extend([m["id"] for m in data[key]])
         assert old_id not in all_memory_ids
+
+    def test_supersedes_nonexistent_id(self):
+        """存在しないIDをsupersedesに指定した場合はスキップされる"""
+        nonexistent_id = "nonexistent-12345"
+
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "存在しないID廃止テスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test",
+            "supersedes": [nonexistent_id]
+        })
+        assert response.status_code == 200
+        data = response.json()
+
+        # 存在しないIDは superseded_ids に含まれない
+        assert nonexistent_id not in data["superseded_ids"]
+        # skipped_supersedes に含まれる
+        assert any(s["id"] == nonexistent_id and s["reason"] == "not_found"
+                   for s in data["skipped_supersedes"])
+
+    def test_deprecate_already_deprecated_memory(self):
+        """既に廃止済みの記憶を再度廃止しても問題ない"""
+        # 記憶を作成
+        create_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "再廃止テスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test"
+        })
+        memory_id = create_response.json()["id"]
+
+        # 後継となる記憶を作成
+        successor_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "後継記憶",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "deprecation-test"
+        })
+        successor_id = successor_response.json()["id"]
+
+        # 1回目の廃止
+        response1 = requests.patch(
+            f"{BASE_URL}/memory/{memory_id}/deprecate",
+            json={"deprecated": True}
+        )
+        assert response1.status_code == 200
+
+        # 2回目の廃止（既に廃止済み、今度は superseded_by を指定）
+        response2 = requests.patch(
+            f"{BASE_URL}/memory/{memory_id}/deprecate",
+            json={"deprecated": True, "superseded_by": successor_id}
+        )
+        assert response2.status_code == 200
+
+        # 状態を確認
+        memory = requests.get(f"{BASE_URL}/memory/{memory_id}").json()
+        assert memory["deprecated"] is True
+        assert memory["superseded_by"] == successor_id
+
+    def test_supersedes_multiple_memories(self):
+        """複数の記憶を一度に廃止できる"""
+        # 古い記憶を複数作成
+        old_ids = []
+        for i in range(3):
+            response = requests.post(f"{BASE_URL}/store", json={
+                "content": f"複数廃止テスト 古い記憶 {i}",
+                "type": "work",
+                "scope": "project",
+                "scope_id": "multi-deprecation-test"
+            })
+            old_ids.append(response.json()["id"])
+
+        # 新しい記憶で全て廃止
+        new_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "複数廃止テスト 新しい記憶",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "multi-deprecation-test",
+            "supersedes": old_ids
+        })
+        assert new_response.status_code == 200
+        new_data = new_response.json()
+
+        # 全ての古い記憶が廃止されている
+        for old_id in old_ids:
+            assert old_id in new_data["superseded_ids"]
+            old_memory = requests.get(f"{BASE_URL}/memory/{old_id}").json()
+            assert old_memory["deprecated"] is True
+            assert old_memory["superseded_by"] == new_data["id"]
+
+    def test_supersedes_with_mixed_valid_invalid_ids(self):
+        """有効なIDと無効なIDが混在した場合、有効なものだけ廃止される"""
+        # 有効な記憶を作成
+        valid_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "混在テスト 有効な記憶",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "mixed-deprecation-test"
+        })
+        valid_id = valid_response.json()["id"]
+        invalid_id = "invalid-id-99999"
+
+        # 有効なIDと無効なIDを混ぜて廃止
+        new_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "混在テスト 新しい記憶",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "mixed-deprecation-test",
+            "supersedes": [valid_id, invalid_id]
+        })
+        assert new_response.status_code == 200
+        data = new_response.json()
+
+        # 有効なIDは廃止されている
+        assert valid_id in data["superseded_ids"]
+        # 無効なIDはスキップされている
+        assert invalid_id not in data["superseded_ids"]
+        assert any(s["id"] == invalid_id for s in data["skipped_supersedes"])
 
 
 if __name__ == "__main__":

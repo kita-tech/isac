@@ -146,6 +146,7 @@ class StoreResponse(BaseModel):
     tags: list[str]
     message: str
     superseded_ids: list[str] = Field(default_factory=list)  # 廃止された記憶のIDリスト
+    skipped_supersedes: list[dict] = Field(default_factory=list)  # スキップされた廃止対象（理由付き）
 
 
 class TeamCreate(BaseModel):
@@ -759,16 +760,27 @@ async def store_memory(
         ))
 
         # supersedes で指定された記憶を廃止
+        skipped_ids = []
         if entry.supersedes:
             for old_id in entry.supersedes:
-                cursor = conn.execute("SELECT id FROM memories WHERE id = ?", (old_id,))
-                if cursor.fetchone():
-                    conn.execute("""
-                        UPDATE memories
-                        SET deprecated = TRUE, superseded_by = ?
-                        WHERE id = ?
-                    """, (memory_id, old_id))
-                    superseded_ids.append(old_id)
+                cursor = conn.execute("SELECT id, created_by FROM memories WHERE id = ?", (old_id,))
+                row = cursor.fetchone()
+                if not row:
+                    skipped_ids.append({"id": old_id, "reason": "not_found"})
+                    continue
+
+                # 権限チェック: 作成者または管理者のみ廃止可能
+                if current_user and not current_user.is_admin:
+                    if row["created_by"] and row["created_by"] != user_id:
+                        skipped_ids.append({"id": old_id, "reason": "permission_denied"})
+                        continue
+
+                conn.execute("""
+                    UPDATE memories
+                    SET deprecated = TRUE, superseded_by = ?
+                    WHERE id = ?
+                """, (memory_id, old_id))
+                superseded_ids.append(old_id)
 
         conn.commit()
 
@@ -778,7 +790,7 @@ async def store_memory(
         action="store_memory",
         resource_type="memory",
         resource_id=memory_id,
-        details={"scope": entry.scope.value, "type": entry.type.value, "superseded": superseded_ids},
+        details={"scope": entry.scope.value, "type": entry.type.value, "superseded": superseded_ids, "skipped": skipped_ids},
         ip_address=client_ip
     )
 
@@ -789,7 +801,8 @@ async def store_memory(
         category=category,
         tags=all_tags,
         message=f"Memory stored ({entry.scope.value}/{entry.type.value})",
-        superseded_ids=superseded_ids
+        superseded_ids=superseded_ids,
+        skipped_supersedes=skipped_ids
     )
 
 
