@@ -77,6 +77,8 @@ isac status --no-cache
 export ISAC_NO_CACHE=1
 ```
 
+**Claude Code CLI での動作**: ユーザーが Claude Code CLI 内で `isac status` と入力した場合、on-prompt フックが `isac status` bash コマンドを自動実行し、バージョン情報を含むフル出力をコンテキストに注入する。Claude はこの出力をそのまま表示すること。
+
 ## コーディング規約
 
 ### Python
