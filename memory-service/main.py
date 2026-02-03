@@ -139,6 +139,7 @@ class StoreResponse(BaseModel):
     id: str
     tokens: int
     scope: MemoryScope
+    scope_id: Optional[str]
     category: Optional[str]
     tags: list[str]
     message: str
@@ -755,6 +756,7 @@ async def store_memory(
         id=memory_id,
         tokens=count_tokens(entry.content),
         scope=entry.scope,
+        scope_id=entry.scope_id,
         category=category,
         tags=all_tags,
         message=f"Memory stored ({entry.scope.value}/{entry.type.value})"
