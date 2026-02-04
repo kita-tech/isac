@@ -53,6 +53,9 @@ PATTERNS=(
     # JWT
     "jwt:eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
 
+    # Context7 API Key
+    "context7_api_key:ctx7sk-[0-9a-f-]{36}"
+
     # Generic secrets（8文字以上）
     "secret:secret[[:space:]]*[=:][[:space:]]*['\"]?[^[:space:]'\"]{8,}['\"]?"
     "credential:credential[[:space:]]*[=:][[:space:]]*['\"]?[^[:space:]'\"]{8,}['\"]?"
