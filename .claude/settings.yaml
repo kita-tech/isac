@@ -2,14 +2,9 @@
 # このファイルを .claude/settings.yaml に配置
 #
 # Hooks Reference: https://docs.anthropic.com/en/docs/claude-code/hooks
-
-# MCP Servers
-mcpServers:
-  notion:
-    command: npx
-    args: ["-y", "@notionhq/notion-mcp-server"]
-    env:
-      OPENAPI_MCP_HEADERS: '{"Authorization": "Bearer ${NOTION_API_TOKEN}", "Notion-Version": "2022-06-28"}'
+#
+# MCP サーバーは claude mcp add --scope user で ~/.claude.json に登録されます。
+# 詳細は CLAUDE.md の MCP サーバーセクションを参照してください。
 
 hooks:
   # ============================================================

@@ -17,7 +17,7 @@ Claude Code CLI + Memory Service による軽量開発支援システム
 
 ### MCP サーバー
 
-プロジェクト標準の MCP サーバー（`.claude/settings.yaml` で定義）：
+プロジェクト標準の MCP サーバー（`claude mcp add --scope user` で登録、`~/.claude.json` に保存）：
 
 | MCP サーバー | パッケージ | 用途 | 環境変数 |
 |-------------|-----------|------|----------|
@@ -26,7 +26,7 @@ Claude Code CLI + Memory Service による軽量開発支援システム
 
 #### セットアップ
 
-環境変数を設定すること（シェルの設定ファイル等に追加）：
+1. 環境変数を設定すること（シェルの設定ファイル等に追加）：
 
 ```bash
 export NOTION_API_TOKEN="ntn_xxxxxxxxxxxxx"
@@ -35,6 +35,26 @@ export CONTEXT7_API_KEY="ctx7sk-xxxxxxxxxxxxx"
 
 - Context7 の API キーは https://context7.com/dashboard で無料取得可能
 - Notion の API キーは https://www.notion.so/my-integrations で Internal Integration を作成して取得
+
+2. `isac init` を実行すると自動登録される。手動で登録する場合：
+
+```bash
+claude mcp add --scope user \
+  -e 'OPENAPI_MCP_HEADERS={"Authorization": "Bearer $NOTION_API_TOKEN", "Notion-Version": "2022-06-28"}' \
+  notion -- npx -y @notionhq/notion-mcp-server
+
+claude mcp add --scope user \
+  -e DEFAULT_MINIMUM_TOKENS=10000 \
+  -e CONTEXT7_API_KEY=$CONTEXT7_API_KEY \
+  context7 -- npx -y @upstash/context7-mcp
+```
+
+3. 確認・管理：
+
+```bash
+claude mcp list              # 登録済み MCP サーバー一覧
+claude mcp remove <name>     # MCP サーバーを削除
+```
 
 ## ディレクトリ構成
 
@@ -304,6 +324,7 @@ bash tests/run_all_tests.sh
 
 - RDBMSを使用している限り、複数人が同時に記憶を追加しても技術的な同期問題は発生しない（SQLiteのACID特性で保証）
 - チーム開発での課題は「意味的な競合」や「重複データ」であり、アプリケーションレベルの問題
+- MCP サーバーは `settings.yaml` ではなく `claude mcp add --scope user` で `~/.claude.json` に登録する（Claude Code CLI が `settings.yaml` の `mcpServers` を読み込まないため）
 
 ## 記憶の廃止機能
 
