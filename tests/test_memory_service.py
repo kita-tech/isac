@@ -432,12 +432,13 @@ class TestDeprecation:
         """include_deprecated=true で廃止済み記憶も取得できる"""
         unique_id = str(uuid.uuid4())[:8]
 
-        # 古い記憶を作成
+        # 古い記憶を作成（importanceを高く設定して検索上位に来るようにする）
         old_response = requests.post(f"{BASE_URL}/store", json={
             "content": f"廃止テスト2 {unique_id} 古い",
             "type": "work",
             "scope": "project",
-            "scope_id": "deprecation-test"
+            "scope_id": "deprecation-test",
+            "importance": 0.95
         })
         old_id = old_response.json()["id"]
 
@@ -447,6 +448,7 @@ class TestDeprecation:
             "type": "work",
             "scope": "project",
             "scope_id": "deprecation-test",
+            "importance": 0.95,
             "supersedes": [old_id]
         })
 
@@ -745,6 +747,112 @@ class TestDeprecation:
         )
         assert response.status_code == 400
         assert "not found" in response.json()["detail"].lower()
+
+
+class TestCategories:
+    """カテゴリ機能のテスト"""
+
+    def test_list_categories(self):
+        """カテゴリ一覧を取得できる"""
+        response = requests.get(f"{BASE_URL}/categories")
+        assert response.status_code == 200
+        data = response.json()
+        assert "categories" in data
+        assert "descriptions" in data
+        # 必須カテゴリが存在することを確認
+        expected_categories = [
+            "backend", "frontend", "infra", "security", "database",
+            "api", "ui", "test", "docs", "architecture", "github", "other"
+        ]
+        for cat in expected_categories:
+            assert cat in data["categories"], f"カテゴリ '{cat}' が見つかりません"
+            assert cat in data["descriptions"], f"カテゴリ '{cat}' の説明が見つかりません"
+
+    def test_github_category_exists(self):
+        """githubカテゴリが利用可能"""
+        response = requests.get(f"{BASE_URL}/categories")
+        data = response.json()
+        assert "github" in data["categories"]
+        assert "github" in data["descriptions"]
+        assert "GitHub" in data["descriptions"]["github"] or "Issue" in data["descriptions"]["github"]
+
+    def test_store_with_github_category(self):
+        """githubカテゴリで記憶を保存できる"""
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "GitHub Issueには既存ラベルのみ使用する",
+            "type": "decision",
+            "scope": "project",
+            "scope_id": "category-test",
+            "category": "github"
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["category"] == "github"
+
+        # 保存した記憶を取得して確認
+        memory_id = data["id"]
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["category"] == "github"
+
+    def test_search_by_category(self):
+        """カテゴリでフィルタリング検索できる"""
+        # github カテゴリで記憶を作成
+        create_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "PRレビューのルール",
+            "type": "decision",
+            "scope": "project",
+            "scope_id": "category-search-test",
+            "category": "github"
+        })
+        assert create_response.status_code == 200
+
+        # カテゴリで検索
+        search_response = requests.get(f"{BASE_URL}/search", params={
+            "query": "PRレビュー",
+            "category": "github"
+        })
+        assert search_response.status_code == 200
+        memories = search_response.json()["memories"]
+        # 結果があれば全てgithubカテゴリであること
+        for memory in memories:
+            if memory.get("category"):
+                assert memory["category"] == "github"
+
+    def test_update_category(self):
+        """記憶のカテゴリを更新できる"""
+        # other カテゴリで作成
+        create_response = requests.post(f"{BASE_URL}/store", json={
+            "content": "カテゴリ更新テスト用",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "category-update-test",
+            "category": "other"
+        })
+        assert create_response.status_code == 200
+        memory_id = create_response.json()["id"]
+
+        # github カテゴリに更新
+        update_response = requests.patch(f"{BASE_URL}/memory/{memory_id}", json={
+            "category": "github"
+        })
+        assert update_response.status_code == 200
+        assert update_response.json()["category"] == "github"
+
+        # 更新が反映されていることを確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.json()["category"] == "github"
+
+    def test_invalid_category_rejected(self):
+        """無効なカテゴリは拒否される"""
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "無効カテゴリテスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "invalid-category-test",
+            "category": "invalid_category"
+        })
+        assert response.status_code == 422  # Validation error
 
 
 if __name__ == "__main__":
