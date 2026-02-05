@@ -347,6 +347,10 @@ gh pr create --title "Add [hook-name] hook" --body "..."
 
 ## テスト
 
+**テスト設計ガイドライン**: [docs/TEST_DESIGN_GUIDE.md](docs/TEST_DESIGN_GUIDE.md) を参照
+
+### テスト実行
+
 ```bash
 # クイックテスト（推奨）
 bash tests/run_all_tests.sh --quick
@@ -354,6 +358,15 @@ bash tests/run_all_tests.sh --quick
 # フルテスト
 bash tests/run_all_tests.sh
 ```
+
+### テスト設計の必須事項
+
+1. **境界値テスト**: 全入力パラメータに対して最小/最大/境界±1
+2. **特殊文字テスト**: 文字列を扱う処理には必ず含める（グローバル決定）
+3. **異常系テスト**: 正常系と同数以上のケースを作成
+4. **エラーハンドリング**: エラーメッセージとステータスコードを検証
+
+詳細は [テスト設計ガイドライン](docs/TEST_DESIGN_GUIDE.md) を参照。
 
 ## 技術的決定事項
 
