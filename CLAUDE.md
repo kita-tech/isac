@@ -56,6 +56,37 @@ claude mcp list              # 登録済み MCP サーバー一覧
 claude mcp remove <name>     # MCP サーバーを削除
 ```
 
+### Claude Code CLI のインストール方法
+
+**ネイティブインストール（推奨）** を使用すること：
+
+```bash
+# macOS / Linux / WSL
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+npm インストールは**非推奨**。ネイティブインストールでのみ利用可能な機能：
+
+| 機能 | 説明 |
+|------|------|
+| シンタックスハイライト | diff 表示での構文ハイライト |
+| SSE MCP サーバー | Server-Sent Events 形式の MCP サーバーサポート |
+| 自動アップデート | バックグラウンドで自動更新 |
+| パフォーマンス向上 | 起動速度、ターミナルレンダリング、ファジーファインダー |
+
+**npm からの移行手順**:
+
+```bash
+# 1. ネイティブインストール
+curl -fsSL https://claude.ai/install.sh | bash
+
+# 2. npm パッケージを削除（競合回避）
+npm uninstall -g @anthropic-ai/claude-code
+
+# 3. インストール確認
+claude doctor
+```
+
 ## ディレクトリ構成
 
 ```
