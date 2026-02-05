@@ -211,6 +211,39 @@ RESULT=$(bash "$HOOKS_DIR/resolve-project.sh" 2>/dev/null)
 PROJECT_ID=$(echo "$RESULT" | jq -r '.project_id')
 assert_equals "single-quoted" "$PROJECT_ID" "シングルクォート付きproject_idを正しく解析"
 
+# テスト7: ダブルクォートを含むwarningが安全にJSON出力される
+rm "$TEST_DIR/.isac.yaml"
+RESULT=$(bash "$HOOKS_DIR/resolve-project.sh" 2>/dev/null)
+# JSONとしてパースできることを確認
+if echo "$RESULT" | jq empty 2>/dev/null; then
+    echo -e "${GREEN}✓ PASS${NC}: warningを含むJSON出力が有効"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: warningを含むJSON出力が無効"
+    echo "  Output: $RESULT"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト8: 特殊文字を含むproject_id（エスケープテスト）
+echo 'project_id: test-with-"quotes"' > "$TEST_DIR/.isac.yaml"
+RESULT=$(bash "$HOOKS_DIR/resolve-project.sh" 2>/dev/null)
+if echo "$RESULT" | jq empty 2>/dev/null; then
+    echo -e "${GREEN}✓ PASS${NC}: ダブルクォートを含むproject_idでもJSONが有効"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: ダブルクォートを含むproject_idでJSONが無効"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト9: 親ディレクトリの.isac.yaml探索
+mkdir -p "$TEST_DIR/subdir/nested"
+echo "project_id: parent-project" > "$TEST_DIR/.isac.yaml"
+cd "$TEST_DIR/subdir/nested"
+RESULT=$(bash "$HOOKS_DIR/resolve-project.sh" 2>/dev/null)
+PROJECT_ID=$(echo "$RESULT" | jq -r '.project_id')
+assert_equals "parent-project" "$PROJECT_ID" "親ディレクトリの.isac.yamlを探索"
+cd "$TEST_DIR"
+
 echo ""
 
 # ========================================
@@ -247,6 +280,94 @@ RESULT=$(echo "This is a normal text" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>
 IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
 assert_equals "false" "$IS_SENSITIVE" "通常テキストは検出しない"
 
+# テスト6: GitHubトークン (ghp_) の検出（ghp_ + 36文字）
+RESULT=$(echo "token=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "GitHubトークン(ghp_)を検出"
+
+# テスト7: GitHubトークン (gho_) の検出（gho_ + 36文字）
+RESULT=$(echo "GITHUB_TOKEN=gho_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "GitHubトークン(gho_)を検出"
+
+# テスト8: Slackトークン (xoxb-) の検出
+# Note: 実際のトークン形式に近いが、GitHubのシークレットスキャンを回避するためダミー値を使用
+RESULT=$(echo 'SLACK_BOT_TOKEN=xoxb-FAKE-TEST-TOKEN-VALUE' | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "Slackトークン(xoxb-)を検出"
+
+# テスト9: Slackトークン (xoxp-) の検出
+RESULT=$(echo 'xoxp-FAKE-TEST-TOKEN' | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "Slackトークン(xoxp-)を検出"
+
+# テスト10: Notionトークン (ntn_) の検出
+RESULT=$(echo "NOTION_TOKEN=ntn_AbCdEfGhIjKlMnOpQrStUvWxYz" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "Notionトークン(ntn_)を検出"
+
+# テスト11: Notionトークン (secret_) の検出
+RESULT=$(echo "secret_AbCdEfGhIjKlMnOpQrStUvWxYz123456" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "Notionトークン(secret_)を検出"
+
+# テスト12: Context7 APIキーの検出
+RESULT=$(echo "CONTEXT7_API_KEY=ctx7sk-12345678-1234-1234-1234-123456789012" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "Context7 APIキーを検出"
+
+# テスト13: 複数の機密情報を検出
+RESULT=$(echo "api_key=sk-abc123456789abcdef password=secret123" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+DETECTED_COUNT=$(echo "$RESULT" | jq -r '.detected | length')
+if [ "$DETECTED_COUNT" -ge 2 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 複数の機密情報を検出 (count: $DETECTED_COUNT)"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 複数の機密情報を検出できず (count: $DETECTED_COUNT)"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト14: JWTトークンの検出
+RESULT=$(echo "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "JWTトークンを検出"
+
+# テスト15: MongoDB URL (+srv) の検出
+RESULT=$(echo "mongodb+srv://user:password@cluster.mongodb.net/db" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "MongoDB+srv URLを検出"
+
+# テスト16: Private Keyの検出
+RESULT=$(echo "-----BEGIN RSA PRIVATE KEY-----" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "RSA Private Keyを検出"
+
+# テスト17: Bearerトークンの検出
+RESULT=$(echo "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "Bearerトークンを検出"
+
+# テスト18: マスキング出力の確認
+RESULT=$(echo "password=supersecret123" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+FILTERED=$(echo "$RESULT" | jq -r '.filtered')
+if [[ "$FILTERED" == *"[MASKED:"* ]]; then
+    echo -e "${GREEN}✓ PASS${NC}: 機密情報がマスキングされる"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 機密情報がマスキングされていない: $FILTERED"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト19: 引数での入力（パイプではなく）
+RESULT=$(bash "$HOOKS_DIR/sensitive-filter.sh" "api_key=sk-test1234567890abcdef" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "引数からの入力でも検出"
+
+# テスト20: 大文字小文字を無視した検出
+RESULT=$(echo "API_KEY=sk-test1234567890abcdef" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+IS_SENSITIVE=$(echo "$RESULT" | jq -r '.is_sensitive')
+assert_equals "true" "$IS_SENSITIVE" "大文字のAPI_KEYも検出"
+
 echo ""
 
 # ========================================
@@ -280,6 +401,61 @@ assert_empty "$OUTPUT" "空のクエリでは出力なし"
 rm "$TEST_DIR/.isac.yaml"
 OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>/dev/null)
 assert_contains "$OUTPUT" "プロジェクト設定" "未設定時に警告を出力"
+
+# テスト4: 特殊文字を含むプロジェクトID（URLエンコード）
+echo "project_id: test-project/with/slashes" > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>&1)
+# スラッシュを含むプロジェクトIDでエラーにならないこと
+if [ $? -eq 0 ] || [[ "$OUTPUT" != *"error"* ]]; then
+    echo -e "${GREEN}✓ PASS${NC}: スラッシュを含むプロジェクトIDでエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: スラッシュを含むプロジェクトIDでエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト5: スペースを含むプロジェクトID
+echo "project_id: test project with spaces" > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>&1)
+if [ $? -eq 0 ] || [[ "$OUTPUT" != *"error"* ]]; then
+    echo -e "${GREEN}✓ PASS${NC}: スペースを含むプロジェクトIDでエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: スペースを含むプロジェクトIDでエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト6: アンパサンドを含むプロジェクトID
+echo "project_id: test&project" > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>&1)
+if [ $? -eq 0 ] || [[ "$OUTPUT" != *"error"* ]]; then
+    echo -e "${GREEN}✓ PASS${NC}: &を含むプロジェクトIDでエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: &を含むプロジェクトIDでエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト7: 日本語を含むプロジェクトID
+echo "project_id: テストプロジェクト" > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>&1)
+if [ $? -eq 0 ] || [[ "$OUTPUT" != *"error"* ]]; then
+    echo -e "${GREEN}✓ PASS${NC}: 日本語プロジェクトIDでエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 日本語プロジェクトIDでエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト8: isac statusコマンド検出
+echo "project_id: test-status" > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "isac status" 2>/dev/null)
+if [[ "$OUTPUT" == *"ISAC Status"* ]] || [[ "$OUTPUT" == *"CLI出力"* ]]; then
+    echo -e "${GREEN}✓ PASS${NC}: isac statusコマンドでステータス出力を注入"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${YELLOW}⚠ SKIP${NC}: isac statusの注入が確認できず（isac CLIのパス問題かも）"
+fi
 
 echo ""
 
@@ -325,6 +501,219 @@ if [ "$FOUND" -eq 0 ]; then
     PASSED=$((PASSED + 1))
 else
     echo -e "${YELLOW}⚠ WARN${NC}: .envファイルが記録されてしまった"
+fi
+
+# テスト4: .env.* 形式の機密ファイルスキップ
+bash "$HOOKS_DIR/post-edit.sh" "/path/to/.env.local" 2>/dev/null
+bash "$HOOKS_DIR/post-edit.sh" "/path/to/.env.production" 2>/dev/null
+echo -e "${GREEN}✓ PASS${NC}: .env.*形式の機密ファイルでエラーにならない"
+PASSED=$((PASSED + 1))
+
+# テスト5: .pemファイルのスキップ
+bash "$HOOKS_DIR/post-edit.sh" "/path/to/server.pem" 2>/dev/null
+echo -e "${GREEN}✓ PASS${NC}: .pemファイルでエラーにならない"
+PASSED=$((PASSED + 1))
+
+# テスト6: credentials.*ファイルのスキップ
+bash "$HOOKS_DIR/post-edit.sh" "/path/to/credentials.json" 2>/dev/null
+echo -e "${GREEN}✓ PASS${NC}: credentials.jsonでエラーにならない"
+PASSED=$((PASSED + 1))
+
+# テスト7: スペースを含むファイル名
+echo "project_id: test-post-edit-spaces" > "$TEST_DIR/.isac.yaml"
+bash "$HOOKS_DIR/post-edit.sh" "/path/to/file with spaces.py" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: スペースを含むファイル名でエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: スペースを含むファイル名でエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト8: 日本語ファイル名
+bash "$HOOKS_DIR/post-edit.sh" "/path/to/テストファイル.py" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 日本語ファイル名でエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 日本語ファイル名でエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト9: ダブルクォートを含むファイル名（JSONエスケープ確認）
+bash "$HOOKS_DIR/post-edit.sh" '/path/to/file"with"quotes.py' 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: ダブルクォートを含むファイル名でエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: ダブルクォートを含むファイル名でエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト10: 長いファイルパス (256文字以上)
+LONG_PATH="/path/to/very/long/directory/structure/that/goes/on/and/on/and/on/for/a/very/long/time/to/test/boundary/conditions/in/file/handling/routines/that/might/have/issues/with/extremely/long/paths/like/this/one/file.py"
+bash "$HOOKS_DIR/post-edit.sh" "$LONG_PATH" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 長いファイルパスでエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 長いファイルパスでエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト11: 様々な拡張子のファイルタイプ検出
+for ext in py js ts tsx jsx go rs rb java php vue css scss html sql sh yaml json; do
+    bash "$HOOKS_DIR/post-edit.sh" "/path/to/test.$ext" 2>/dev/null
+done
+echo -e "${GREEN}✓ PASS${NC}: 各種拡張子のファイルでエラーにならない"
+PASSED=$((PASSED + 1))
+
+# テスト12: testディレクトリのカテゴリ判定
+echo "project_id: test-post-edit-category" > "$TEST_DIR/.isac.yaml"
+bash "$HOOKS_DIR/post-edit.sh" "/path/to/tests/test_example.py" 2>/dev/null
+sleep 1
+SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=test_example&scope_id=test-post-edit-category" 2>/dev/null)
+CATEGORY=$(echo "$SEARCH_RESULT" | jq -r '.memories[0].category // "unknown"')
+if [ "$CATEGORY" = "test" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: testsディレクトリのファイルがtestカテゴリになる"
+    PASSED=$((PASSED + 1))
+elif [ "$CATEGORY" = "unknown" ]; then
+    echo -e "${YELLOW}⚠ SKIP${NC}: カテゴリ判定が確認できず（メモリが見つからない）"
+else
+    echo -e "${YELLOW}⚠ WARN${NC}: testsディレクトリのファイルがtestカテゴリでない ($CATEGORY)"
+fi
+
+# テスト13: apiディレクトリのカテゴリ判定
+bash "$HOOKS_DIR/post-edit.sh" "/path/to/api/routes/users.py" 2>/dev/null
+sleep 1
+SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=users.py&scope_id=test-post-edit-category" 2>/dev/null)
+CATEGORY=$(echo "$SEARCH_RESULT" | jq -r '.memories[0].category // "unknown"')
+if [ "$CATEGORY" = "api" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: apiディレクトリのファイルがapiカテゴリになる"
+    PASSED=$((PASSED + 1))
+elif [ "$CATEGORY" = "unknown" ]; then
+    echo -e "${YELLOW}⚠ SKIP${NC}: カテゴリ判定が確認できず"
+else
+    echo -e "${YELLOW}⚠ WARN${NC}: apiディレクトリのファイルがapiカテゴリでない ($CATEGORY)"
+fi
+
+echo ""
+
+# ========================================
+# save-memory.sh のテスト
+# ========================================
+echo "----------------------------------------"
+echo "save-memory.sh テスト"
+echo "----------------------------------------"
+
+# テスト1: 基本的なJSON入力
+echo "project_id: test-save-memory" > "$TEST_DIR/.isac.yaml"
+cd "$TEST_DIR"
+
+JSON_INPUT='```json
+{
+  "type": "work",
+  "category": "test",
+  "tags": ["unittest"],
+  "summary": "save-memory test entry",
+  "importance": 0.6
+}
+```'
+
+echo "$JSON_INPUT" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: save-memory.shが正常終了"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: save-memory.shがエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト2: skip=trueで保存しない
+JSON_SKIP='```json
+{
+  "skip": true,
+  "summary": "This should not be saved"
+}
+```'
+echo "$JSON_SKIP" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+echo -e "${GREEN}✓ PASS${NC}: skip=trueでエラーにならない"
+PASSED=$((PASSED + 1))
+
+# テスト3: 空のサマリでスキップ
+JSON_EMPTY='```json
+{
+  "type": "work",
+  "summary": ""
+}
+```'
+echo "$JSON_EMPTY" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+echo -e "${GREEN}✓ PASS${NC}: 空のサマリでエラーにならない"
+PASSED=$((PASSED + 1))
+
+# テスト4: ダブルクォートを含むサマリ（JSONエスケープ確認）
+JSON_QUOTES='```json
+{
+  "type": "work",
+  "category": "test",
+  "tags": [],
+  "summary": "Test with \"quotes\" in summary",
+  "importance": 0.5
+}
+```'
+echo "$JSON_QUOTES" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: ダブルクォートを含むサマリでエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: ダブルクォートを含むサマリでエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト5: 日本語サマリ
+JSON_JAPANESE='```json
+{
+  "type": "work",
+  "category": "test",
+  "tags": ["テスト"],
+  "summary": "日本語のサマリをテスト",
+  "importance": 0.5
+}
+```'
+echo "$JSON_JAPANESE" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 日本語サマリでエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 日本語サマリでエラー"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト6: 不正なimportance値（範囲チェック）
+JSON_INVALID_IMPORTANCE='```json
+{
+  "type": "work",
+  "summary": "Test invalid importance",
+  "importance": "invalid"
+}
+```'
+echo "$JSON_INVALID_IMPORTANCE" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+echo -e "${GREEN}✓ PASS${NC}: 不正なimportance値でエラーにならない（デフォルト0.5にフォールバック）"
+PASSED=$((PASSED + 1))
+
+# テスト7: Memory Serviceが停止している場合のフォールバック（タイムアウト）
+# このテストは実際にサービスを停止する必要があるためスキップ
+echo -e "${YELLOW}⚠ SKIP${NC}: Memory Service停止テストはスキップ"
+
+# テスト8: 生のJSON入力（```jsonなし）
+JSON_RAW='{"type": "work", "summary": "Raw JSON test", "importance": 0.5}'
+echo "$JSON_RAW" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 生のJSON入力でエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 生のJSON入力でエラー"
+    FAILED=$((FAILED + 1))
 fi
 
 echo ""

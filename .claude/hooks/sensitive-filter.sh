@@ -56,6 +56,23 @@ PATTERNS=(
     # Context7 API Key
     "context7_api_key:ctx7sk-[0-9a-f-]{36}"
 
+    # GitHub Token
+    "github_token:ghp_[A-Za-z0-9]{36}"
+    "github_token:gho_[A-Za-z0-9]{36}"
+    "github_token:ghu_[A-Za-z0-9]{36}"
+    "github_token:ghs_[A-Za-z0-9]{36}"
+    "github_token:ghr_[A-Za-z0-9]{36}"
+
+    # Slack Token
+    "slack_token:xoxb-[0-9A-Za-z-]+"
+    "slack_token:xoxp-[0-9A-Za-z-]+"
+    "slack_token:xoxa-[0-9A-Za-z-]+"
+    "slack_token:xoxr-[0-9A-Za-z-]+"
+
+    # Notion Token
+    "notion_token:ntn_[A-Za-z0-9]+"
+    "notion_token:secret_[A-Za-z0-9]+"
+
     # Generic secrets（8文字以上）
     "secret:secret[[:space:]]*[=:][[:space:]]*['\"]?[^[:space:]'\"]{8,}['\"]?"
     "credential:credential[[:space:]]*[=:][[:space:]]*['\"]?[^[:space:]'\"]{8,}['\"]?"
@@ -72,7 +89,8 @@ for pattern_def in "${PATTERNS[@]}"; do
     PATTERN_REGEX="${pattern_def#*:}"
 
     # 大文字小文字を無視してマッチ
-    if echo "$INPUT_TEXT" | grep -iE "$PATTERN_REGEX" > /dev/null 2>&1; then
+    # Note: `--` は必須（パターンが "-" で始まる場合にオプションとして解釈されるのを防ぐ）
+    if echo "$INPUT_TEXT" | grep -iE -- "$PATTERN_REGEX" > /dev/null 2>&1; then
         DETECTED+=("$PATTERN_NAME")
         IS_SENSITIVE="true"
 
