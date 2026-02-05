@@ -247,28 +247,75 @@ else
     FAILED=$((FAILED + 1))
 fi
 
-# テスト12: 特殊文字を含むタスク
+# テスト12: 特殊文字を含むタスク（保存・取得・表示）
 echo ""
 echo -e "${YELLOW}テスト12: 特殊文字を含むタスク${NC}"
-RESULT=$(curl -s -X POST "$MEMORY_URL/store" \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n \
-    --arg content 'タスク with "quotes" and <brackets>' \
-    --arg scope_id "$PROJECT_ID" \
-    --arg owner "$USER_EMAIL" \
-    '{
-      content: $content,
-      type: "todo",
-      scope: "project",
-      scope_id: $scope_id,
-      metadata: { owner: $owner, status: "pending" }
-    }')")
 
-if [ "$(echo "$RESULT" | jq -r '.id')" != "null" ]; then
-    echo -e "${GREEN}✓ PASS${NC}: 特殊文字を含むタスクが保存される"
+# このテスト専用のユーザー
+SPECIAL_CHAR_USER="special-char-test-$$@example.com"
+
+# 各種特殊文字をテスト
+declare -a SPECIAL_CHARS=(
+    'タスク with "double quotes"'
+    "タスク with 'single quotes'"
+    'タスク with <brackets> & ampersand'
+    'タスク with backslash \\ here'
+    'タスク with backtick ` here'
+    'タスク with dollar $VAR sign'
+    $'タスク with tab\there'
+)
+
+SPECIAL_PASS=0
+SPECIAL_FAIL=0
+
+for SPECIAL_CONTENT in "${SPECIAL_CHARS[@]}"; do
+    # 保存
+    RESULT=$(curl -s -X POST "$MEMORY_URL/store" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n \
+        --arg content "$SPECIAL_CONTENT" \
+        --arg scope_id "$PROJECT_ID" \
+        --arg owner "$SPECIAL_CHAR_USER" \
+        '{
+          content: $content,
+          type: "todo",
+          scope: "project",
+          scope_id: $scope_id,
+          metadata: { owner: $owner, status: "pending" }
+        }')")
+
+    SPECIAL_ID=$(echo "$RESULT" | jq -r '.id')
+
+    if [ "$SPECIAL_ID" != "null" ] && [ -n "$SPECIAL_ID" ]; then
+        # 取得確認
+        RETRIEVED=$(curl -s "$MEMORY_URL/memory/$SPECIAL_ID" | jq -r '.content')
+        if [ "$RETRIEVED" = "$SPECIAL_CONTENT" ]; then
+            # 表示確認（1行で表示されるか）
+            DISPLAY=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$SPECIAL_CHAR_USER&status=pending" \
+              | jq -r --arg id "$SPECIAL_ID" '.todos[] | select(.id == $id) | .content | split("\n")[0] | .[0:60]')
+            if [ -n "$DISPLAY" ]; then
+                SPECIAL_PASS=$((SPECIAL_PASS + 1))
+            else
+                echo "  表示失敗: $SPECIAL_CONTENT"
+                SPECIAL_FAIL=$((SPECIAL_FAIL + 1))
+            fi
+        else
+            echo "  取得内容不一致: $SPECIAL_CONTENT"
+            SPECIAL_FAIL=$((SPECIAL_FAIL + 1))
+        fi
+        # クリーンアップ
+        curl -s -X DELETE "$MEMORY_URL/memory/$SPECIAL_ID" > /dev/null 2>&1
+    else
+        echo "  保存失敗: $SPECIAL_CONTENT"
+        SPECIAL_FAIL=$((SPECIAL_FAIL + 1))
+    fi
+done
+
+if [ $SPECIAL_FAIL -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 特殊文字を含むタスクが保存・取得・表示される（${SPECIAL_PASS}件）"
     PASSED=$((PASSED + 1))
 else
-    echo -e "${RED}✗ FAIL${NC}: 特殊文字を含むタスクが保存されない"
+    echo -e "${RED}✗ FAIL${NC}: 特殊文字テストに失敗（成功: ${SPECIAL_PASS}, 失敗: ${SPECIAL_FAIL}）"
     FAILED=$((FAILED + 1))
 fi
 
