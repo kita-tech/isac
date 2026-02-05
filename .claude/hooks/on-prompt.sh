@@ -85,16 +85,19 @@ if [ -n "$PROJECT_WARNING" ]; then
 fi
 
 # コンテキスト取得（Team IDがあればヘッダーに追加）
+# URLエンコード（パス部分に使用するため）
+ENCODED_PROJECT_ID=$(printf '%s' "$PROJECT_ID" | jq -sRr @uri 2>/dev/null || printf '%s' "$PROJECT_ID" | sed 's/ /%20/g; s/&/%26/g; s/?/%3F/g; s/#/%23/g; s|/|%2F|g')
+
 CONTEXT=""
 if [ -n "$TEAM_ID" ]; then
-    CONTEXT=$(curl -s --max-time 5 "$MEMORY_URL/context/$PROJECT_ID" \
+    CONTEXT=$(curl -s --max-time 5 "$MEMORY_URL/context/$ENCODED_PROJECT_ID" \
         --get \
         --data-urlencode "query=$QUERY" \
         --data-urlencode "max_tokens=$MAX_TOKENS" \
         -H "X-Team-Id: $TEAM_ID" \
         2>/dev/null || echo "")
 else
-    CONTEXT=$(curl -s --max-time 5 "$MEMORY_URL/context/$PROJECT_ID" \
+    CONTEXT=$(curl -s --max-time 5 "$MEMORY_URL/context/$ENCODED_PROJECT_ID" \
         --get \
         --data-urlencode "query=$QUERY" \
         --data-urlencode "max_tokens=$MAX_TOKENS" \

@@ -233,24 +233,37 @@ case "$EXTENSION" in
         ;;
 esac
 
-# Memory Serviceに保存
+# Memory Serviceに保存（jqで安全にJSONを構築）
+PAYLOAD=$(jq -n \
+    --arg content "$SUMMARY" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg category "$AUTO_CATEGORY" \
+    --argjson tags "$AUTO_TAGS" \
+    --arg file "$FILE_PATH" \
+    --arg filename "$FILENAME" \
+    --arg extension "$EXTENSION" \
+    --arg directory "$DIRNAME" \
+    --arg user "$USER_ID" \
+    --arg team_id "$TEAM_ID" \
+    '{
+        content: $content,
+        type: "work",
+        importance: 0.3,
+        scope: "project",
+        scope_id: $scope_id,
+        category: $category,
+        tags: $tags,
+        metadata: {
+            file: $file,
+            filename: $filename,
+            extension: $extension,
+            directory: $directory,
+            action: "edit",
+            user: $user,
+            team_id: $team_id
+        }
+    }')
+
 curl -s --max-time 3 -X POST "$MEMORY_URL/store" \
     -H "Content-Type: application/json" \
-    -d "{
-        \"content\": \"$SUMMARY\",
-        \"type\": \"work\",
-        \"importance\": 0.3,
-        \"scope\": \"project\",
-        \"scope_id\": \"$PROJECT_ID\",
-        \"category\": \"$AUTO_CATEGORY\",
-        \"tags\": $AUTO_TAGS,
-        \"metadata\": {
-            \"file\": \"$FILE_PATH\",
-            \"filename\": \"$FILENAME\",
-            \"extension\": \"$EXTENSION\",
-            \"directory\": \"$DIRNAME\",
-            \"action\": \"edit\",
-            \"user\": \"$USER_ID\",
-            \"team_id\": \"$TEAM_ID\"
-        }
-    }" > /dev/null 2>&1 || true
+    -d "$PAYLOAD" > /dev/null 2>&1 || true

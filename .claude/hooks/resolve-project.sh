@@ -35,9 +35,15 @@ SOURCE=""
 WARNING=""
 SUGGESTIONS="[]"
 
-# JSON出力関数
+# JSON出力関数（jqで安全にエスケープ）
 output_json() {
-    echo "{\"project_id\":\"$PROJECT_ID\",\"source\":\"$SOURCE\",\"team_id\":\"$TEAM_ID\",\"warning\":\"$WARNING\",\"suggestions\":$SUGGESTIONS}"
+    jq -n \
+        --arg project_id "$PROJECT_ID" \
+        --arg source "$SOURCE" \
+        --arg team_id "$TEAM_ID" \
+        --arg warning "$WARNING" \
+        --argjson suggestions "$SUGGESTIONS" \
+        '{project_id: $project_id, source: $source, team_id: $team_id, warning: $warning, suggestions: $suggestions}'
 }
 
 # .isac.yaml を親ディレクトリまで探索
@@ -94,7 +100,9 @@ fi
 
 # 5. Memory Service でTypoチェック
 if [ "$SOURCE" != "default" ] && curl -s --connect-timeout 1 "$MEMORY_URL/health" > /dev/null 2>&1; then
-    SUGGEST_RESPONSE=$(curl -s --max-time 3 "$MEMORY_URL/projects/suggest?name=$PROJECT_ID" 2>/dev/null || echo "{}")
+    # URLエンコード（jqがあれば使用、なければsedでフォールバック）
+    ENCODED_PROJECT_ID=$(printf '%s' "$PROJECT_ID" | jq -sRr @uri 2>/dev/null || printf '%s' "$PROJECT_ID" | sed 's/ /%20/g; s/&/%26/g; s/?/%3F/g; s/#/%23/g')
+    SUGGEST_RESPONSE=$(curl -s --max-time 3 "$MEMORY_URL/projects/suggest?name=$ENCODED_PROJECT_ID" 2>/dev/null || echo "{}")
 
     EXACT_MATCH=$(echo "$SUGGEST_RESPONSE" | jq -r '.exact_match // false' 2>/dev/null || echo "false")
 

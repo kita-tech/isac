@@ -75,22 +75,33 @@ if ! echo "$IMPORTANCE" | grep -qE '^[0-9]*\.?[0-9]+$'; then
     IMPORTANCE="0.5"
 fi
 
-# Memory Serviceに保存
+# Memory Serviceに保存（jqで安全にJSONを構築）
+PAYLOAD=$(jq -n \
+    --arg content "$SUMMARY" \
+    --arg type "$TYPE" \
+    --argjson importance "$IMPORTANCE" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg category "$CATEGORY" \
+    --argjson tags "$TAGS" \
+    --arg user "$USER_ID" \
+    --arg team_id "$TEAM_ID" \
+    '{
+        content: $content,
+        type: $type,
+        importance: $importance,
+        scope: "project",
+        scope_id: $scope_id,
+        category: $category,
+        tags: $tags,
+        metadata: {
+            source: "ai-classification",
+            user: $user,
+            team_id: $team_id
+        }
+    }')
+
 curl -s --max-time 5 -X POST "$MEMORY_URL/store" \
     -H "Content-Type: application/json" \
-    -d "{
-        \"content\": \"$SUMMARY\",
-        \"type\": \"$TYPE\",
-        \"importance\": $IMPORTANCE,
-        \"scope\": \"project\",
-        \"scope_id\": \"$PROJECT_ID\",
-        \"category\": \"$CATEGORY\",
-        \"tags\": $TAGS,
-        \"metadata\": {
-            \"source\": \"ai-classification\",
-            \"user\": \"$USER_ID\",
-            \"team_id\": \"$TEAM_ID\"
-        }
-    }" > /dev/null 2>&1 || true
+    -d "$PAYLOAD" > /dev/null 2>&1 || true
 
 echo "[ISAC] Memory saved: $SUMMARY (category: $CATEGORY)"
