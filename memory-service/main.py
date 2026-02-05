@@ -87,6 +87,7 @@ class MemoryCategory(str, Enum):
     TEST = "test"              # テスト
     DOCS = "docs"              # ドキュメント
     ARCHITECTURE = "architecture"  # アーキテクチャ
+    GITHUB = "github"          # GitHub運用（Issue、PR、ラベル等）
     OTHER = "other"            # その他
 
 
@@ -1476,6 +1477,7 @@ async def list_categories():
             "test": "テスト",
             "docs": "ドキュメント",
             "architecture": "アーキテクチャ設計",
+            "github": "GitHub運用（Issue、PR、ラベル等）",
             "other": "その他"
         }
     }
