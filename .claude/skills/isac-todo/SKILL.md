@@ -228,6 +228,30 @@ curl -s -X PATCH "${MEMORY_SERVICE_URL:-http://localhost:8100}/memory/$MEMORY_ID
 |-----------|--------|
 | `/isac-later "内容"` | `/isac-todo add "内容"` |
 
+## 注意事項
+
+### owner は自動設定（手動変更禁止）
+
+`metadata.owner` には `git config user.email` の値を自動設定する。
+以下のような手動設定は**禁止**:
+
+```bash
+# NG: 手動で別の値を設定
+metadata: { owner: "team", ... }
+metadata: { owner: "shared", ... }
+metadata: { owner: "other-user@example.com", ... }
+```
+
+### チーム共有タスクは Todo に入れない
+
+チームで共有すべき課題・バックログは以下を使用:
+
+| 用途 | 保存先 |
+|------|--------|
+| 個人の「後でやる」タスク | `/isac-todo` |
+| チームの技術的課題 | `/isac-decide`（type: decision） |
+| チームのバックログ | GitHub Issues |
+
 ## 関連スキル
 
 - `/isac-suggest` - 未完了タスクも表示される

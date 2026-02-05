@@ -193,6 +193,8 @@ ISACのスキルは必ず `isac-` プレフィックスを付けること（他�
 | `/isac-todo` | 個人タスク管理（add/list/done） |
 | `/isac-later` | 「後でやる」タスクを素早く記録 |
 
+**注意**: `/isac-todo` の owner ルールは `.claude/skills/isac-todo/SKILL.md` の「注意事項」を参照。チーム共有タスクは Todo ではなく `/isac-decide` または GitHub Issues を使用すること。
+
 ### Skills ファイル構造
 
 Claude Code CLI がスキルを認識するには、ディレクトリ構造と YAML フロントマターが必要：
