@@ -47,6 +47,9 @@ bash tests/test_hooks.sh
 # 統合テストのみ
 bash tests/test_integration.sh
 
+# Todoテストのみ
+bash tests/test_todo.sh
+
 # APIテストのみ（pytest必要）
 pytest tests/test_memory_service.py -v
 ```
@@ -76,6 +79,17 @@ pytest tests/test_memory_service.py -v
 | エクスポート/インポート | データのバックアップと復元 |
 | 統計情報 | プロジェクト統計の取得 |
 
+### Todoテスト (`test_todo.sh`)
+
+| テスト項目 | 内容 |
+|-----------|------|
+| Todo追加 | `type: todo` での記憶保存 |
+| Todo一覧取得 | `/my/todos` APIの動作確認 |
+| Todo完了 | `metadata.status` の更新 |
+| 別ユーザー分離 | オーナー別のフィルタリング |
+| 特殊文字 | 日本語、改行、特殊文字の保存・取得 |
+| エッジケース | 空文字、重複登録、存在しないID |
+
 ### APIテスト (`test_memory_service.py`)
 
 | クラス | 内容 |
@@ -97,10 +111,12 @@ pytest tests/test_memory_service.py -v
 bash tests/run_all_tests.sh --help
 
 # 利用可能なオプション
---quick        # Hook + 統合テストのみ（pytest不要）
+--quick        # Hook + 統合テスト + Todoテストのみ（pytest不要）
 --api-only     # APIテストのみ
 --hooks-only   # Hookテストのみ
 --integration  # 統合テストのみ
+--todo-only    # Todoテストのみ
+--coverage     # カバレッジ計測（HTMLレポート生成）
 ```
 
 ## トラブルシューティング
@@ -132,6 +148,16 @@ pip install -r tests/requirements.txt
 # または
 pip install pytest requests
 ```
+
+## テスト設計ガイドライン
+
+新しいテストを作成する際は、[テスト設計ガイドライン](../docs/TEST_DESIGN_GUIDE.md)を参照してください。
+
+主な内容:
+- 必須テストカテゴリ（正常系、境界値、異常系、特殊文字）
+- 条件付き必須カテゴリ（状態遷移、セキュリティ、並行処理）
+- テスト設計チェックリスト
+- テストの命名規則
 
 ## テストデータ
 

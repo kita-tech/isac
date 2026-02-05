@@ -1,7 +1,7 @@
 # ISAC Memory Service 詳細ドキュメント
 
 > このドキュメントは10人の専門家による議論を経て作成されました。
-> 最終更新: 2026-02-02 | バージョン: 2.1.0
+> 最終更新: 2026-02-05 | バージョン: 2.2.0
 
 ---
 
@@ -224,6 +224,7 @@ CREATE INDEX idx_memories_importance ON memories(importance);
 | decision | 365日 | 設計判断は長期間参照される |
 | knowledge | 365日 | 組織ナレッジは蓄積が重要 |
 | work | 30日 | 作業履歴は短期的な参照が中心 |
+| todo | 30日 | 個人タスクは短期的な参照が中心 |
 
 **鈴木（セキュリティエンジニア）のコメント**:
 > 「TTLはデータ肥大化を防ぐだけでなく、古い情報による誤判断を防ぐ役割もある。
@@ -347,12 +348,45 @@ Memory Serviceは記憶を**3つのタイプ**に分類します。適切なタ�
 }
 ```
 
+#### 4. TODO（個人タスク）
+
+**定義**: 個人の「後でやる」タスクを記録し、翌日に続きから作業するための機能
+
+**使用する場面**:
+- 「後でやる」タスク（「Skillsのテスト追加」）
+- 未完了の作業（「isac doctorコマンド実装」）
+- 個人的なメモ（「このバグを調査する」）
+
+**推奨重要度**: 0.5（デフォルト）
+
+**注意**: チーム共有すべきタスクにはGitHub Issuesを、技術的課題には`/isac-decide`を使用すること。
+
+**例**:
+```json
+{
+  "content": "Skillsのテスト追加",
+  "type": "todo",
+  "scope": "project",
+  "scope_id": "my-project",
+  "importance": 0.5,
+  "metadata": {
+    "owner": "user@example.com",
+    "status": "pending"
+  }
+}
+```
+
+**関連スキル**:
+- `/isac-todo`: タスク管理（add/list/done/clear）
+- `/isac-later`: タスク素早く追加（`/isac-todo add` のエイリアス）
+
 ### タイプ選択の判断基準表
 
 | 質問 | Yes → | No → |
 |------|-------|------|
 | 将来の開発方針に影響するか？ | DECISION | 次の質問へ |
 | 他のメンバーが知るべき一般的な情報か？ | KNOWLEDGE | 次の質問へ |
+| 個人的な「後でやる」タスクか？ | TODO | 次の質問へ |
 | 特定のファイルや機能に関する作業記録か？ | WORK | KNOWLEDGE |
 
 ### 重要度（importance）の設定ガイド
@@ -738,6 +772,7 @@ Claudeが今回の作業を分析して出力:
 | DELETE | /memory/{id} | 記憶を削除 | 必要 |
 | GET | /categories | カテゴリ一覧 | 不要 |
 | GET | /tags/{scope_id} | 使用中タグ一覧 | オプション |
+| GET | /my/todos | 個人TODO一覧 | オプション |
 | GET | /projects | プロジェクト一覧 | オプション |
 | GET | /projects/suggest | 類似プロジェクト提案 | オプション |
 | GET | /stats/{project_id} | 統計情報 | オプション |
@@ -869,6 +904,36 @@ Claudeが今回の作業を分析して出力:
     {"tag": "auth", "count": 3}
   ],
   "total": 10
+}
+```
+
+#### GET /my/todos - 個人TODO一覧
+
+個人タスク管理機能（`/isac-todo`）で使用するエンドポイント。
+
+**パラメータ**:
+- `project_id` (必須): プロジェクトID
+- `owner` (必須): オーナー（git config user.email の値）
+- `status` (オプション): `pending`（未完了）, `done`（完了）, `all`（全て）。デフォルト: `pending`
+
+**レスポンス**:
+```json
+{
+  "project_id": "my-project",
+  "owner": "user@example.com",
+  "todos": [
+    {
+      "id": "abc123",
+      "content": "Skillsのテスト追加",
+      "type": "todo",
+      "metadata": {
+        "owner": "user@example.com",
+        "status": "pending"
+      },
+      "created_at": "2026-02-05T10:00:00Z"
+    }
+  ],
+  "count": 1
 }
 ```
 
@@ -1199,6 +1264,7 @@ curl "http://localhost:8100/export/my-project" > memories.json
 
 | バージョン | 日付 | 変更内容 |
 |-----------|------|----------|
+| 2.2.0 | 2026-02-05 | todoタイプ追加、/my/todosエンドポイント追加、metadata更新機能追加 |
 | 2.1.0 | 2026-02-02 | カテゴリ・タグ機能追加、自動タグ付け |
 | 2.0.0 | 2026-02-02 | マルチテナント対応、スコープ追加 |
 | 1.0.0 | 2026-01-01 | 初版リリース |

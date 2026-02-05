@@ -184,12 +184,13 @@ POST /store
 | パラメータ | 必須 | 説明 |
 |-----------|------|------|
 | `content` | Yes | 記憶の内容 |
-| `type` | Yes | `work`, `decision`, `knowledge` のいずれか |
+| `type` | Yes | `work`, `decision`, `knowledge`, `todo` のいずれか |
 | `scope` | Yes | `project` または `global` |
 | `scope_id` | Yes | プロジェクトID |
 | `supersedes` | No | 廃止する記憶IDのリスト |
 | `tags` | No | タグのリスト |
-| `importance` | No | 重要度（1-5、デフォルト3） |
+| `importance` | No | 重要度（0.0-1.0、デフォルト0.5） |
+| `metadata` | No | メタデータ（JSON形式） |
 
 ### 記憶の検索
 
@@ -213,6 +214,44 @@ PATCH /memory/{id}/deprecate
 |-----------|------|------|
 | `deprecated` | Yes | `true` で廃止、`false` で復元 |
 | `superseded_by` | No | 後継の記憶ID |
+
+### 記憶のメタデータ更新
+
+```
+PATCH /memory/{id}
+```
+
+| パラメータ | 必須 | 説明 |
+|-----------|------|------|
+| `category` | No | 新しいカテゴリ |
+| `tags` | No | 新しいタグ（上書き） |
+| `add_tags` | No | 追加するタグ |
+| `remove_tags` | No | 削除するタグ |
+| `importance` | No | 新しい重要度 |
+| `summary` | No | 新しい要約 |
+| `metadata` | No | メタデータの更新（既存とマージ） |
+
+### 個人TODO一覧の取得
+
+```
+GET /my/todos?project_id={プロジェクトID}&owner={オーナー}&status={ステータス}
+```
+
+| パラメータ | 必須 | 説明 |
+|-----------|------|------|
+| `project_id` | Yes | プロジェクトID |
+| `owner` | Yes | オーナー（git config user.email の値） |
+| `status` | No | `pending`（未完了）, `done`（完了）, `all`（全て）。デフォルト: `pending` |
+
+**レスポンス例:**
+```json
+{
+  "project_id": "my-project",
+  "owner": "user@example.com",
+  "todos": [...],
+  "count": 2
+}
+```
 
 ### 記憶の削除
 
