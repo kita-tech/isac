@@ -15,6 +15,32 @@ description: 現在の状況を分析し、適切なSkillを提案します。
 
 会話の文脈から、今実行すべきSkillを提案します。
 
+## 実行手順
+
+### 1. 未完了タスクの取得（最初に実行）
+
+まず、Memory Serviceから未完了のTodoを取得して表示します：
+
+```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "default")
+USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
+API_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending"
+
+# 直接パイプで処理（変数代入時の制御文字問題を回避）
+COUNT=$(curl -s "$API_URL" | jq -r '.count')
+
+if [ "$COUNT" -gt 0 ]; then
+    echo "## 📋 未完了タスク（${COUNT}件）"
+    echo ""
+    curl -s "$API_URL" | jq -r '.todos | to_entries | .[] | "\(.key + 1). [ ] \(.value.content | split("\n")[0] | .[0:60])"'
+    echo ""
+fi
+```
+
+### 2. 状況分析とSkill提案
+
+未完了タスクを表示した後、会話の文脈を分析してSkillを提案します。
+
 ## 判断基準
 
 以下の基準で適切なSkillを提案してください：
@@ -58,6 +84,37 @@ description: 現在の状況を分析し、適切なSkillを提案します。
 **キーワード例**: 前に、以前、過去、履歴、経緯、なぜ
 
 ## 出力フォーマット
+
+### 未完了タスクがある場合
+
+```
+## 💡 Skill提案
+
+### 📋 未完了タスク（2件）
+
+1. [ ] Skillsのテスト追加
+2. [ ] isac doctorコマンド実装
+
+→ 上記タスクに着手する場合は内容を伝えてください
+
+---
+
+現在の状況を分析しました。
+
+### 推奨Skill
+
+**[Skill名]** - [理由]
+
+### 他の選択肢
+
+- [別のSkill] - [こういう場合に有効]
+
+---
+
+実行する場合は `[Skill名]` と入力してください。
+```
+
+### 未完了タスクがない場合
 
 ```
 ## 💡 Skill提案
@@ -150,6 +207,8 @@ description: 現在の状況を分析し、適切なSkillを提案します。
 
 | Skill | 用途 |
 |-------|------|
+| /isac-todo | 個人タスク管理（add/list/done） |
+| /isac-later | 「後でやる」タスクを素早く記録 |
 | /isac-memory | 記憶の検索・管理 |
 | /isac-decide | 決定の記録 |
 | /isac-review | 設計レビュー（ペルソナ議論） |
@@ -178,6 +237,8 @@ description: 現在の状況を分析し、適切なSkillを提案します。
 
 ## 関連スキル
 
+- `/isac-todo` - 個人タスク管理
+- `/isac-later` - 「後でやる」タスクを素早く記録
 - `/isac-memory` - 記憶の検索・管理
 - `/isac-decide` - 決定の記録
 - `/isac-review` - 設計レビュー

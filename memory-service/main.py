@@ -73,6 +73,7 @@ class MemoryType(str, Enum):
     DECISION = "decision"  # 重要決定
     WORK = "work"          # 作業履歴
     KNOWLEDGE = "knowledge"  # 一般知識
+    TODO = "todo"          # 個人タスク（翌日持ち越し用）
 
 
 class MemoryCategory(str, Enum):
@@ -174,6 +175,7 @@ class MemoryUpdate(BaseModel):
     remove_tags: Optional[list[str]] = Field(None, description="削除するタグ")
     importance: Optional[float] = Field(None, ge=0.0, le=1.0, description="新しい重要度")
     summary: Optional[str] = Field(None, description="新しい要約")
+    metadata: Optional[dict] = Field(None, description="メタデータの更新（マージ）")
 
 
 # ============================================================
@@ -1105,6 +1107,18 @@ async def update_memory(
             updates.append("tags = ?")
             params.append(json.dumps(new_tags))
 
+        # メタデータの更新（既存のメタデータにマージ）
+        # Todo用の許可されたキーのみ更新可能（セキュリティ対策）
+        ALLOWED_METADATA_KEYS = {"status", "completed_at", "priority", "due_date"}
+        if update.metadata is not None:
+            current_metadata = json.loads(row["metadata"] or "{}")
+            # 許可されたキーのみマージ（ownerなど重要なフィールドの上書きを防止）
+            for key, value in update.metadata.items():
+                if key in ALLOWED_METADATA_KEYS:
+                    current_metadata[key] = value
+            updates.append("metadata = ?")
+            params.append(json.dumps(current_metadata))
+
         if not updates:
             raise HTTPException(status_code=400, detail="No updates provided")
 
@@ -1492,6 +1506,59 @@ async def list_tags(
             "scope_id": scope_id,
             "tags": [{"tag": t, "count": c} for t, c in sorted_tags],
             "total": len(sorted_tags)
+        }
+
+
+@app.get("/my/todos")
+async def get_my_todos(
+    project_id: str = Query(..., description="プロジェクトID（.isac.yamlのproject_id）"),
+    owner: str = Query(..., description="オーナー（git config user.emailの値）"),
+    status: str = Query("pending", description="ステータスフィルタ: pending（未完了）, done（完了）, all（全て）"),
+    current_user: Optional[CurrentUser] = Depends(get_current_user)
+):
+    """
+    個人のTODOリストを取得
+
+    個人タスク管理機能（/isac-todo）で使用するエンドポイント。
+    指定されたプロジェクトとオーナーに紐づくTODOを取得する。
+
+    - **project_id**: プロジェクト識別子
+    - **owner**: タスクのオーナー（メールアドレス形式推奨）
+    - **status**: pending/done/all でフィルタ
+
+    Returns:
+        project_id, owner, todos（リスト）, count
+    """
+    now = datetime.utcnow().isoformat()
+
+    with get_db() as conn:
+        # SQL側でowner/statusをフィルタ（パフォーマンス改善）
+        sql = """
+            SELECT * FROM memories
+            WHERE scope = 'project'
+            AND scope_id = ?
+            AND type = 'todo'
+            AND json_extract(metadata, '$.owner') = ?
+            AND (expires_at IS NULL OR expires_at > ?)
+            AND (deprecated IS NULL OR deprecated = FALSE)
+        """
+        params: list = [project_id, owner, now]
+
+        # statusフィルタ（all以外の場合）
+        if status != "all":
+            sql += " AND json_extract(metadata, '$.status') = ?"
+            params.append(status)
+
+        sql += " ORDER BY created_at DESC"
+
+        cursor = conn.execute(sql, params)
+        all_todos = [row_to_memory(row) for row in cursor.fetchall()]
+
+        return {
+            "project_id": project_id,
+            "owner": owner,
+            "todos": all_todos,
+            "count": len(all_todos)
         }
 
 

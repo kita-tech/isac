@@ -29,20 +29,29 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RUN_API=true
 RUN_HOOKS=true
 RUN_INTEGRATION=true
+RUN_TODO=true
 
 for arg in "$@"; do
     case $arg in
         --api-only)
             RUN_HOOKS=false
             RUN_INTEGRATION=false
+            RUN_TODO=false
             ;;
         --hooks-only)
             RUN_API=false
             RUN_INTEGRATION=false
+            RUN_TODO=false
             ;;
         --integration)
             RUN_API=false
             RUN_HOOKS=false
+            RUN_TODO=false
+            ;;
+        --todo-only)
+            RUN_API=false
+            RUN_HOOKS=false
+            RUN_INTEGRATION=false
             ;;
         --quick)
             RUN_API=false
@@ -54,7 +63,8 @@ for arg in "$@"; do
             echo "  --api-only      APIテストのみ実行 (pytest必要)"
             echo "  --hooks-only    Hookテストのみ実行"
             echo "  --integration   統合テストのみ実行"
-            echo "  --quick         Hookテストと統合テストのみ (pytest不要)"
+            echo "  --todo-only     Todoテストのみ実行"
+            echo "  --quick         Hookテストと統合テストとTodoテストのみ (pytest不要)"
             echo ""
             exit 0
             ;;
@@ -158,6 +168,24 @@ if [ "$RUN_INTEGRATION" = true ]; then
         RESULTS+=("Integration Tests: ${GREEN}PASSED${NC}")
     else
         RESULTS+=("Integration Tests: ${RED}FAILED${NC}")
+        EXIT_CODE=1
+    fi
+    echo ""
+fi
+
+# ========================================
+# Todoテスト
+# ========================================
+if [ "$RUN_TODO" = true ]; then
+    echo "========================================"
+    echo -e "${BLUE}4. Todoテスト${NC}"
+    echo "========================================"
+    echo ""
+
+    if bash "$SCRIPT_DIR/test_todo.sh"; then
+        RESULTS+=("Todo Tests: ${GREEN}PASSED${NC}")
+    else
+        RESULTS+=("Todo Tests: ${RED}FAILED${NC}")
         EXIT_CODE=1
     fi
     echo ""

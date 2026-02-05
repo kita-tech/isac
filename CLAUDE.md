@@ -187,9 +187,13 @@ ISACのスキルは必ず `isac-` プレフィックスを付けること（他�
 | `/isac-pr-review` | GitHub PRレビュー（PRコメントに投稿） |
 | `/isac-memory` | 記憶の検索・管理 |
 | `/isac-decide` | 決定の記録 |
-| `/isac-suggest` | 状況に応じたSkill提案 |
+| `/isac-suggest` | 状況に応じたSkill提案（未完了タスクも表示） |
 | `/isac-save-memory` | AI分析による保存形式提案（記憶/Skill/Hooks） |
 | `/isac-notion-design` | Notionからの設計書生成 |
+| `/isac-todo` | 個人タスク管理（add/list/done） |
+| `/isac-later` | 「後でやる」タスクを素早く記録 |
+
+**注意**: `/isac-todo` の owner ルールは `.claude/skills/isac-todo/SKILL.md` の「注意事項」を参照。チーム共有タスクは Todo ではなく `/isac-decide` または GitHub Issues を使用すること。
 
 ### Skills ファイル構造
 
