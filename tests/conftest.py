@@ -164,3 +164,35 @@ def unique_scope_id() -> str:
     """テストごとにユニークな scope_id を生成"""
     import uuid
     return f"test-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def special_chars():
+    """特殊文字テスト用データ"""
+    return [
+        'テスト with "double quotes"',
+        "テスト with 'single quotes'",
+        'テスト with <brackets> & ampersand',
+        'テスト with backslash \\ here',
+        'テスト with backtick ` here',
+        'テスト with dollar $VAR sign',
+        'テスト with tab\there',
+        'テスト with newline\nhere',
+        'テスト with emoji 😀🎉',
+        'テスト with japanese 日本語テスト',
+    ]
+
+
+@pytest.fixture
+def boundary_values():
+    """境界値テスト用データ"""
+    return {
+        'empty': '',
+        'single_char': 'a',
+        'max_summary': 'a' * 200,
+        'long_content': 'a' * 10000,
+        'zero_importance': 0.0,
+        'max_importance': 1.0,
+        'negative_importance': -0.1,
+        'over_importance': 1.1,
+    }
