@@ -333,6 +333,227 @@ OTHER_TODO_ID=$(echo "$RESULT" | jq -r '.id')
 curl -s -X DELETE "$MEMORY_URL/memory/$OTHER_TODO_ID" > /dev/null 2>&1
 
 # ========================================
+# 追加エッジケーステスト
+# ========================================
+echo ""
+echo "----------------------------------------"
+echo "追加エッジケーステスト"
+echo "----------------------------------------"
+
+# テスト15: 空文字タスク
+echo ""
+echo -e "${YELLOW}テスト15: 空文字タスク${NC}"
+RESULT=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg owner "$USER_EMAIL" \
+    '{
+      content: $content,
+      type: "todo",
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: { owner: $owner, status: "pending" }
+    }')")
+
+# 空文字でも保存される（APIレベルでは制限なし）
+if [ "$(echo "$RESULT" | jq -r '.id')" != "null" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 空文字タスクが保存される（API許容）"
+    PASSED=$((PASSED + 1))
+    # クリーンアップ
+    EMPTY_TODO_ID=$(echo "$RESULT" | jq -r '.id')
+    curl -s -X DELETE "$MEMORY_URL/memory/$EMPTY_TODO_ID" > /dev/null 2>&1
+else
+    echo -e "${RED}✗ FAIL${NC}: 空文字タスクの保存に失敗"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト16: 同一内容の重複登録
+echo ""
+echo -e "${YELLOW}テスト16: 同一内容の重複登録${NC}"
+DUPLICATE_CONTENT="重複テストタスク"
+
+# 1回目
+RESULT1=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "$DUPLICATE_CONTENT" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg owner "$USER_EMAIL" \
+    '{
+      content: $content,
+      type: "todo",
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: { owner: $owner, status: "pending" }
+    }')")
+DUP_ID1=$(echo "$RESULT1" | jq -r '.id')
+
+# 2回目（同じ内容）
+RESULT2=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "$DUPLICATE_CONTENT" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg owner "$USER_EMAIL" \
+    '{
+      content: $content,
+      type: "todo",
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: { owner: $owner, status: "pending" }
+    }')")
+DUP_ID2=$(echo "$RESULT2" | jq -r '.id')
+
+# 両方保存される（重複は許容）
+if [ "$DUP_ID1" != "null" ] && [ "$DUP_ID2" != "null" ] && [ "$DUP_ID1" != "$DUP_ID2" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 重複タスクは別々のIDで保存される"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 重複タスクの保存に問題"
+    FAILED=$((FAILED + 1))
+fi
+
+# クリーンアップ
+curl -s -X DELETE "$MEMORY_URL/memory/$DUP_ID1" > /dev/null 2>&1
+curl -s -X DELETE "$MEMORY_URL/memory/$DUP_ID2" > /dev/null 2>&1
+
+# テスト17: 存在しないIDでの完了操作
+echo ""
+echo -e "${YELLOW}テスト17: 存在しないIDでの完了操作${NC}"
+FAKE_ID="nonexistent-id-12345"
+RESULT=$(curl -s -X PATCH "$MEMORY_URL/memory/$FAKE_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"metadata": {"status": "done"}}')
+
+if [ "$(echo "$RESULT" | jq -r '.detail')" = "Memory not found" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 存在しないIDでは404エラー"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 存在しないIDのエラー処理が不正"
+    echo "  Response: $RESULT"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト18: done状態のタスク一括削除（clearコマンド相当）
+echo ""
+echo -e "${YELLOW}テスト18: done状態のタスク一括削除${NC}"
+
+# このテスト用の専用ユーザーを使用（他テストの影響を排除）
+CLEAR_TEST_USER="clear-test-$$@example.com"
+
+# doneタスクを2つ作成
+DONE1=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "完了済みタスク1" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg owner "$CLEAR_TEST_USER" \
+    '{
+      content: $content,
+      type: "todo",
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: { owner: $owner, status: "done" }
+    }')" | jq -r '.id')
+
+DONE2=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "完了済みタスク2" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg owner "$CLEAR_TEST_USER" \
+    '{
+      content: $content,
+      type: "todo",
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: { owner: $owner, status: "done" }
+    }')" | jq -r '.id')
+
+# pendingタスクを1つ作成
+PENDING1=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "未完了タスク" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg owner "$CLEAR_TEST_USER" \
+    '{
+      content: $content,
+      type: "todo",
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: { owner: $owner, status: "pending" }
+    }')" | jq -r '.id')
+
+# doneタスクを取得して削除（clearコマンドのシミュレーション）
+DONE_TODOS=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$CLEAR_TEST_USER&status=done")
+DONE_IDS=$(echo "$DONE_TODOS" | jq -r '.todos[].id')
+DONE_COUNT=$(echo "$DONE_TODOS" | jq -r '.count')
+
+for id in $DONE_IDS; do
+    curl -s -X DELETE "$MEMORY_URL/memory/$id" > /dev/null 2>&1
+done
+
+# 削除後、pendingのみ残っているか確認
+REMAINING=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$CLEAR_TEST_USER&status=all")
+REMAINING_COUNT=$(echo "$REMAINING" | jq -r '.count')
+
+if [ "$DONE_COUNT" = "2" ] && [ "$REMAINING_COUNT" = "1" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: done状態のタスクのみ削除された"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: clear処理に問題（done: $DONE_COUNT, remaining: $REMAINING_COUNT）"
+    FAILED=$((FAILED + 1))
+fi
+
+# 残ったpendingタスクを削除
+curl -s -X DELETE "$MEMORY_URL/memory/$PENDING1" > /dev/null 2>&1
+
+# テスト19: metadata更新のマージ動作
+echo ""
+echo -e "${YELLOW}テスト19: metadata更新のマージ動作${NC}"
+
+# タスク作成（複数のmetadataフィールド）
+MERGE_TODO=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "マージテストタスク" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg owner "$USER_EMAIL" \
+    '{
+      content: $content,
+      type: "todo",
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: { owner: $owner, status: "pending", priority: "high" }
+    }')" | jq -r '.id')
+
+# statusのみ更新（ownerとpriorityは保持されるべき）
+curl -s -X PATCH "$MEMORY_URL/memory/$MERGE_TODO" \
+  -H "Content-Type: application/json" \
+  -d '{"metadata": {"status": "done"}}' > /dev/null
+
+# 更新後のmetadataを確認
+UPDATED=$(curl -s "$MEMORY_URL/memory/$MERGE_TODO")
+UPDATED_OWNER=$(echo "$UPDATED" | jq -r '.metadata.owner')
+UPDATED_STATUS=$(echo "$UPDATED" | jq -r '.metadata.status')
+UPDATED_PRIORITY=$(echo "$UPDATED" | jq -r '.metadata.priority')
+
+if [ "$UPDATED_OWNER" = "$USER_EMAIL" ] && [ "$UPDATED_STATUS" = "done" ] && [ "$UPDATED_PRIORITY" = "high" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: metadata更新がマージされた（既存値保持）"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: metadata更新でマージが機能していない"
+    echo "  owner: $UPDATED_OWNER, status: $UPDATED_STATUS, priority: $UPDATED_PRIORITY"
+    FAILED=$((FAILED + 1))
+fi
+
+# クリーンアップ
+curl -s -X DELETE "$MEMORY_URL/memory/$MERGE_TODO" > /dev/null 2>&1
+
+# ========================================
 # クリーンアップ
 # ========================================
 cleanup
