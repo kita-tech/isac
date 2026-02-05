@@ -511,9 +511,63 @@ fi
 # 残ったpendingタスクを削除
 curl -s -X DELETE "$MEMORY_URL/memory/$PENDING1" > /dev/null 2>&1
 
-# テスト19: metadata更新のマージ動作
+# テスト19: 改行を含むタスク
 echo ""
-echo -e "${YELLOW}テスト19: metadata更新のマージ動作${NC}"
+echo -e "${YELLOW}テスト19: 改行を含むタスク${NC}"
+MULTILINE_CONTENT="改行を含むタスク
+2行目の内容
+3行目の内容"
+
+RESULT=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "$MULTILINE_CONTENT" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg owner "$USER_EMAIL" \
+    '{
+      content: $content,
+      type: "todo",
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: { owner: $owner, status: "pending" }
+    }')")
+
+MULTILINE_TODO_ID=$(echo "$RESULT" | jq -r '.id')
+
+if [ "$MULTILINE_TODO_ID" != "null" ] && [ -n "$MULTILINE_TODO_ID" ]; then
+    # /my/todos で取得できるか確認
+    TODOS=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending")
+    # jqでパースできるか確認（改行を含むJSONが正しく処理されるか）
+    PARSE_CHECK=$(echo "$TODOS" | jq -r '.count' 2>&1)
+    if [[ "$PARSE_CHECK" =~ ^[0-9]+$ ]]; then
+        echo -e "${GREEN}✓ PASS${NC}: 改行を含むタスクが保存・取得できる"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: 改行を含むタスクの取得でパースエラー"
+        echo "  Error: $PARSE_CHECK"
+        FAILED=$((FAILED + 1))
+    fi
+    # 表示テスト: 改行を含むcontentが1行で表示されるか（該当タスクのみチェック）
+    DISPLAY_LINE=$(echo "$TODOS" | jq -r --arg id "$MULTILINE_TODO_ID" '.todos[] | select(.id == $id) | .content | split("\n")[0] | .[0:60]' 2>&1)
+    # 表示結果に改行が含まれていないことを確認
+    if [[ "$DISPLAY_LINE" == "改行を含むタスク" ]] && [[ ! "$DISPLAY_LINE" =~ $'\n' ]]; then
+        echo -e "${GREEN}✓ PASS${NC}: 改行を含むタスクが1行で表示される"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: 改行を含むタスクの表示に問題"
+        echo "  Display: $DISPLAY_LINE"
+        FAILED=$((FAILED + 1))
+    fi
+    # クリーンアップ
+    curl -s -X DELETE "$MEMORY_URL/memory/$MULTILINE_TODO_ID" > /dev/null 2>&1
+else
+    echo -e "${RED}✗ FAIL${NC}: 改行を含むタスクが保存されない"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト21: metadata更新のマージ動作
+echo ""
+echo -e "${YELLOW}テスト20: metadata更新のマージ動作${NC}"
 
 # タスク作成（複数のmetadataフィールド）
 MERGE_TODO=$(curl -s -X POST "$MEMORY_URL/store" \

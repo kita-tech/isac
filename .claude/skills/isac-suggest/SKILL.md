@@ -24,14 +24,15 @@ description: 現在の状況を分析し、適切なSkillを提案します。
 ```bash
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "default")
 USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
+API_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending"
 
-TODOS=$(curl -s "${MEMORY_SERVICE_URL:-http://localhost:8100}/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending")
-COUNT=$(echo "$TODOS" | jq -r '.count')
+# 直接パイプで処理（変数代入時の制御文字問題を回避）
+COUNT=$(curl -s "$API_URL" | jq -r '.count')
 
 if [ "$COUNT" -gt 0 ]; then
     echo "## 📋 未完了タスク（${COUNT}件）"
     echo ""
-    echo "$TODOS" | jq -r '.todos | to_entries | .[] | "\(.key + 1). [ ] \(.value.content)"'
+    curl -s "$API_URL" | jq -r '.todos | to_entries | .[] | "\(.key + 1). [ ] \(.value.content | split("\n")[0] | .[0:60])"'
     echo ""
 fi
 ```

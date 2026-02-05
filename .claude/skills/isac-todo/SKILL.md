@@ -117,21 +117,9 @@ curl -s -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "default")
 USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
 
-# 検索（type=todoでフィルタ）
-RESULT=$(curl -s --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/search" \
-  --data-urlencode "query=*" \
-  --data-urlencode "type=todo" \
-  --data-urlencode "scope_id=$PROJECT_ID" \
-  --data-urlencode "limit=50")
-
-# ownerとstatusでフィルタして表示
-echo "$RESULT" | jq -r --arg owner "$USER_EMAIL" '
-  .memories
-  | map(select(.metadata.owner == $owner and .metadata.status == "pending"))
-  | to_entries
-  | .[]
-  | "\(.key + 1). [ ] \(.value.content) (ID: \(.value.id))"
-'
+# /my/todos APIを使用（直接パイプで処理、変数代入時の文字化け回避）
+curl -s "${MEMORY_SERVICE_URL:-http://localhost:8100}/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending" \
+  | jq -r '.todos | to_entries | .[] | "\(.key + 1). [ ] \(.value.content | split("\n")[0] | .[0:60]) (ID: \(.value.id))"'
 ```
 
 **出力例:**
