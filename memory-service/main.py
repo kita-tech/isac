@@ -73,6 +73,7 @@ class MemoryType(str, Enum):
     DECISION = "decision"  # 重要決定
     WORK = "work"          # 作業履歴
     KNOWLEDGE = "knowledge"  # 一般知識
+    TODO = "todo"          # 個人タスク（翌日持ち越し用）
 
 
 class MemoryCategory(str, Enum):
@@ -174,6 +175,7 @@ class MemoryUpdate(BaseModel):
     remove_tags: Optional[list[str]] = Field(None, description="削除するタグ")
     importance: Optional[float] = Field(None, ge=0.0, le=1.0, description="新しい重要度")
     summary: Optional[str] = Field(None, description="新しい要約")
+    metadata: Optional[dict] = Field(None, description="メタデータの更新（マージ）")
 
 
 # ============================================================
@@ -1105,6 +1107,13 @@ async def update_memory(
             updates.append("tags = ?")
             params.append(json.dumps(new_tags))
 
+        # メタデータの更新（既存のメタデータにマージ）
+        if update.metadata is not None:
+            current_metadata = json.loads(row["metadata"] or "{}")
+            current_metadata.update(update.metadata)
+            updates.append("metadata = ?")
+            params.append(json.dumps(current_metadata))
+
         if not updates:
             raise HTTPException(status_code=400, detail="No updates provided")
 
@@ -1492,6 +1501,52 @@ async def list_tags(
             "scope_id": scope_id,
             "tags": [{"tag": t, "count": c} for t, c in sorted_tags],
             "total": len(sorted_tags)
+        }
+
+
+@app.get("/my/todos")
+async def get_my_todos(
+    project_id: str = Query(..., description="プロジェクトID"),
+    owner: str = Query(..., description="オーナー（メールアドレス）"),
+    status: str = Query("pending", description="ステータス（pending/done/all）"),
+    current_user: Optional[CurrentUser] = Depends(get_current_user)
+):
+    """個人のTODOリストを取得"""
+    now = datetime.utcnow().isoformat()
+
+    with get_db() as conn:
+        sql = """
+            SELECT * FROM memories
+            WHERE scope = 'project'
+            AND scope_id = ?
+            AND type = 'todo'
+            AND (expires_at IS NULL OR expires_at > ?)
+            AND (deprecated IS NULL OR deprecated = FALSE)
+        """
+        params: list = [project_id, now]
+
+        cursor = conn.execute(sql, params)
+        all_todos = []
+
+        for row in cursor.fetchall():
+            memory = row_to_memory(row)
+            # ownerでフィルタ
+            if memory.metadata.get("owner") != owner:
+                continue
+            # statusでフィルタ
+            todo_status = memory.metadata.get("status", "pending")
+            if status != "all" and todo_status != status:
+                continue
+            all_todos.append(memory)
+
+        # 作成日順にソート（新しい順）
+        all_todos.sort(key=lambda x: x.created_at, reverse=True)
+
+        return {
+            "project_id": project_id,
+            "owner": owner,
+            "todos": all_todos,
+            "count": len(all_todos)
         }
 
 
