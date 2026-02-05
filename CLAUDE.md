@@ -357,7 +357,24 @@ bash tests/run_all_tests.sh --quick
 
 # フルテスト
 bash tests/run_all_tests.sh
+
+# カバレッジ計測付きテスト
+bash tests/run_all_tests.sh --coverage
 ```
+
+### カバレッジ計測
+
+`--coverage` オプションでカバレッジ計測を有効化できる。
+
+```bash
+# カバレッジ計測付きでAPIテストを実行
+bash tests/run_all_tests.sh --api-only --coverage
+
+# HTMLレポートは htmlcov/index.html に生成される
+open htmlcov/index.html
+```
+
+**設定ファイル**: `.coveragerc` でカバレッジ計測の設定を管理。
 
 ### テスト設計の必須事項
 

@@ -12,6 +12,7 @@
 #   --hooks-only    Hookテストのみ実行
 #   --integration   統合テストのみ実行
 #   --quick         Hookテストと統合テストのみ（pytest不要）
+#   --coverage      カバレッジ計測を有効化（HTMLレポート生成）
 
 set -e
 
@@ -30,6 +31,7 @@ RUN_API=true
 RUN_HOOKS=true
 RUN_INTEGRATION=true
 RUN_TODO=true
+RUN_COVERAGE=false
 
 for arg in "$@"; do
     case $arg in
@@ -56,6 +58,9 @@ for arg in "$@"; do
         --quick)
             RUN_API=false
             ;;
+        --coverage)
+            RUN_COVERAGE=true
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -65,6 +70,7 @@ for arg in "$@"; do
             echo "  --integration   統合テストのみ実行"
             echo "  --todo-only     Todoテストのみ実行"
             echo "  --quick         Hookテストと統合テストとTodoテストのみ (pytest不要)"
+            echo "  --coverage      カバレッジ計測を有効化 (HTMLレポート生成)"
             echo ""
             exit 0
             ;;
@@ -128,8 +134,20 @@ if [ "$RUN_API" = true ]; then
     echo ""
 
     cd "$PROJECT_DIR"
-    if pytest tests/test_memory_service.py -v --tb=short; then
+
+    # カバレッジオプションの構築
+    PYTEST_OPTS="-v --tb=short"
+    if [ "$RUN_COVERAGE" = true ]; then
+        PYTEST_OPTS="$PYTEST_OPTS --cov=memory-service --cov-report=term-missing --cov-report=html"
+        echo -e "${YELLOW}カバレッジ計測を有効化${NC}"
+    fi
+
+    if pytest tests/test_memory_service.py $PYTEST_OPTS; then
         RESULTS+=("API Tests: ${GREEN}PASSED${NC}")
+        if [ "$RUN_COVERAGE" = true ]; then
+            echo ""
+            echo -e "${GREEN}カバレッジレポート生成完了: htmlcov/index.html${NC}"
+        fi
     else
         RESULTS+=("API Tests: ${RED}FAILED${NC}")
         EXIT_CODE=1
