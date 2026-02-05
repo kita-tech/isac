@@ -612,7 +612,7 @@ else
     FAILED=$((FAILED + 1))
 fi
 
-# テスト21: metadata更新のマージ動作
+# テスト20: metadata更新のマージ動作
 echo ""
 echo -e "${YELLOW}テスト20: metadata更新のマージ動作${NC}"
 

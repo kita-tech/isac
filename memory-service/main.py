@@ -1108,9 +1108,14 @@ async def update_memory(
             params.append(json.dumps(new_tags))
 
         # メタデータの更新（既存のメタデータにマージ）
+        # Todo用の許可されたキーのみ更新可能（セキュリティ対策）
+        ALLOWED_METADATA_KEYS = {"status", "completed_at", "priority", "due_date"}
         if update.metadata is not None:
             current_metadata = json.loads(row["metadata"] or "{}")
-            current_metadata.update(update.metadata)
+            # 許可されたキーのみマージ（ownerなど重要なフィールドの上書きを防止）
+            for key, value in update.metadata.items():
+                if key in ALLOWED_METADATA_KEYS:
+                    current_metadata[key] = value
             updates.append("metadata = ?")
             params.append(json.dumps(current_metadata))
 
@@ -1506,41 +1511,48 @@ async def list_tags(
 
 @app.get("/my/todos")
 async def get_my_todos(
-    project_id: str = Query(..., description="プロジェクトID"),
-    owner: str = Query(..., description="オーナー（メールアドレス）"),
-    status: str = Query("pending", description="ステータス（pending/done/all）"),
+    project_id: str = Query(..., description="プロジェクトID（.isac.yamlのproject_id）"),
+    owner: str = Query(..., description="オーナー（git config user.emailの値）"),
+    status: str = Query("pending", description="ステータスフィルタ: pending（未完了）, done（完了）, all（全て）"),
     current_user: Optional[CurrentUser] = Depends(get_current_user)
 ):
-    """個人のTODOリストを取得"""
+    """
+    個人のTODOリストを取得
+
+    個人タスク管理機能（/isac-todo）で使用するエンドポイント。
+    指定されたプロジェクトとオーナーに紐づくTODOを取得する。
+
+    - **project_id**: プロジェクト識別子
+    - **owner**: タスクのオーナー（メールアドレス形式推奨）
+    - **status**: pending/done/all でフィルタ
+
+    Returns:
+        project_id, owner, todos（リスト）, count
+    """
     now = datetime.utcnow().isoformat()
 
     with get_db() as conn:
+        # SQL側でowner/statusをフィルタ（パフォーマンス改善）
         sql = """
             SELECT * FROM memories
             WHERE scope = 'project'
             AND scope_id = ?
             AND type = 'todo'
+            AND json_extract(metadata, '$.owner') = ?
             AND (expires_at IS NULL OR expires_at > ?)
             AND (deprecated IS NULL OR deprecated = FALSE)
         """
-        params: list = [project_id, now]
+        params: list = [project_id, owner, now]
+
+        # statusフィルタ（all以外の場合）
+        if status != "all":
+            sql += " AND json_extract(metadata, '$.status') = ?"
+            params.append(status)
+
+        sql += " ORDER BY created_at DESC"
 
         cursor = conn.execute(sql, params)
-        all_todos = []
-
-        for row in cursor.fetchall():
-            memory = row_to_memory(row)
-            # ownerでフィルタ
-            if memory.metadata.get("owner") != owner:
-                continue
-            # statusでフィルタ
-            todo_status = memory.metadata.get("status", "pending")
-            if status != "all" and todo_status != status:
-                continue
-            all_todos.append(memory)
-
-        # 作成日順にソート（新しい順）
-        all_todos.sort(key=lambda x: x.created_at, reverse=True)
+        all_todos = [row_to_memory(row) for row in cursor.fetchall()]
 
         return {
             "project_id": project_id,
