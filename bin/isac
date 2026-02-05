@@ -42,6 +42,9 @@ show_help() {
     echo -e "${YELLOW}Status Options:${NC}"
     echo "  --no-cache    キャッシュを使わずリモートを確認"
     echo ""
+    echo -e "${YELLOW}Switch Options:${NC}"
+    echo "  -y, --yes     確認プロンプトをスキップ（新規プロジェクト自動作成）"
+    echo ""
     echo -e "${YELLOW}Environment Variables:${NC}"
     echo "  ISAC_NO_CACHE=1   キャッシュを常に無効化（開発時に便利）"
     echo ""
@@ -54,12 +57,44 @@ show_help() {
     echo "  isac status               # 状態確認（キャッシュ使用）"
     echo "  isac status --no-cache    # 最新情報を取得"
     echo "  isac switch my-project    # プロジェクト切り替え"
+    echo "  isac switch new-proj -y   # 新規プロジェクト自動作成"
     echo ""
 }
 
 # バージョン表示
 show_version() {
     echo "ISAC version ${VERSION}"
+}
+
+# プロジェクトIDのバリデーション
+validate_project_id() {
+    local id="$1"
+
+    # 空チェック
+    if [ -z "${id}" ]; then
+        echo -e "${RED}Error: Project ID cannot be empty${NC}"
+        return 1
+    fi
+
+    # 長さチェック（1-64文字）
+    if [ ${#id} -gt 64 ]; then
+        echo -e "${RED}Error: Project ID must be 64 characters or less${NC}"
+        return 1
+    fi
+
+    # 禁止文字チェック（空白、スラッシュ、バックスラッシュ、制御文字）
+    if echo "${id}" | grep -qE '[[:space:]/\\]'; then
+        echo -e "${RED}Error: Project ID cannot contain spaces, slashes, or backslashes${NC}"
+        return 1
+    fi
+
+    # 先頭・末尾のドットやハイフンをチェック
+    if echo "${id}" | grep -qE '^[.-]|[.-]$'; then
+        echo -e "${RED}Error: Project ID cannot start or end with a dot or hyphen${NC}"
+        return 1
+    fi
+
+    return 0
 }
 
 # バージョンキャッシュが有効か確認
@@ -232,7 +267,7 @@ cmd_update() {
     fi
 
     # Hooks 更新
-    echo -e "${GREEN}[1/3] Updating hooks...${NC}"
+    echo -e "${GREEN}[1/4] Updating hooks...${NC}"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/hooks" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/hooks/"*.sh "${ISAC_GLOBAL_DIR}/hooks/" 2>/dev/null || true
         chmod +x "${ISAC_GLOBAL_DIR}/hooks/"*.sh 2>/dev/null || true
@@ -240,7 +275,7 @@ cmd_update() {
     fi
 
     # Skills 更新（ディレクトリ構造）
-    echo -e "${GREEN}[2/3] Updating skills...${NC}"
+    echo -e "${GREEN}[2/4] Updating skills...${NC}"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
         rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
         cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
@@ -316,6 +351,11 @@ cmd_init() {
                 project_id="${input_id}"
             fi
         fi
+    fi
+
+    # プロジェクトIDのバリデーション
+    if ! validate_project_id "${project_id}"; then
+        exit 1
     fi
 
     # .isac.yaml 作成
@@ -787,7 +827,7 @@ cmd_status() {
         echo -e "  ~/.isac/: ${GREEN}Installed${NC}"
         local hook_count skill_count
         hook_count=$(ls -1 "${ISAC_GLOBAL_DIR}/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
-        skill_count=$(ls -1 "${ISAC_GLOBAL_DIR}/skills/"*.md 2>/dev/null | wc -l | tr -d ' ')
+        skill_count=$(ls -1d "${ISAC_GLOBAL_DIR}/skills/"*/ 2>/dev/null | wc -l | tr -d ' ')
         echo "  Hooks: ${hook_count}"
         echo "  Skills: ${skill_count}"
     else
@@ -842,11 +882,35 @@ for p in data:
 
 # プロジェクト切り替え
 cmd_switch() {
-    local project_id="${1:-}"
+    local project_id=""
+    local flag_yes=false
+
+    # オプション解析
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes|-y)
+                flag_yes=true
+                shift
+                ;;
+            -*)
+                echo -e "${RED}Unknown option: $1${NC}"
+                exit 1
+                ;;
+            *)
+                project_id="$1"
+                shift
+                ;;
+        esac
+    done
 
     if [ -z "${project_id}" ]; then
         echo -e "${RED}Error: Project ID required${NC}"
-        echo "Usage: isac switch <project-id>"
+        echo "Usage: isac switch <project-id> [--yes]"
+        exit 1
+    fi
+
+    # プロジェクトIDのバリデーション
+    if ! validate_project_id "${project_id}"; then
         exit 1
     fi
 
@@ -858,8 +922,10 @@ cmd_switch() {
     memory_url=$(get_memory_url)
 
     if curl -s --connect-timeout 2 "${memory_url}/health" > /dev/null 2>&1; then
-        local suggestion
-        suggestion=$(curl -s "${memory_url}/projects/suggest?name=${project_id}" 2>/dev/null)
+        local suggestion encoded_id
+        # URLエンコード（特殊文字対策）
+        encoded_id=$(printf '%s' "${project_id}" | sed 's/ /%20/g; s/&/%26/g; s/?/%3F/g; s/#/%23/g')
+        suggestion=$(curl -s "${memory_url}/projects/suggest?name=${encoded_id}" 2>/dev/null)
 
         local exact_match
         exact_match=$(echo "${suggestion}" | grep -o '"exact_match":true' || true)
@@ -878,11 +944,13 @@ cmd_switch() {
                 echo ""
             fi
 
-            echo -n "Create new project? (y/N): "
-            read -r create
-            if [ "${create}" != "y" ] && [ "${create}" != "Y" ]; then
-                echo "Cancelled."
-                exit 0
+            if [ "${flag_yes}" = false ]; then
+                echo -n "Create new project? (y/N): "
+                read -r create
+                if [ "${create}" != "y" ] && [ "${create}" != "Y" ]; then
+                    echo "Cancelled."
+                    exit 0
+                fi
             fi
         fi
     fi
@@ -953,7 +1021,8 @@ case "${1:-}" in
         cmd_projects
         ;;
     switch)
-        cmd_switch "${2:-}"
+        shift
+        cmd_switch "$@"
         ;;
     version|--version|-v)
         show_version
