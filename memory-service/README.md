@@ -184,13 +184,16 @@ POST /store
 | パラメータ | 必須 | 説明 |
 |-----------|------|------|
 | `content` | Yes | 記憶の内容 |
-| `type` | Yes | `work`, `decision`, `knowledge`, `todo` のいずれか |
-| `scope` | Yes | `project` または `global` |
-| `scope_id` | Yes | プロジェクトID |
+| `type` | No | `work`, `decision`, `knowledge`, `todo` のいずれか（デフォルト: `work`） |
+| `scope` | No | `global`, `team`, `project` のいずれか（デフォルト: `project`） |
+| `scope_id` | No | チームID または プロジェクトID（`team`/`project` スコープの場合に使用） |
 | `supersedes` | No | 廃止する記憶IDのリスト |
-| `tags` | No | タグのリスト |
+| `category` | No | カテゴリ（省略時は自動推定） |
+| `tags` | No | タグのリスト（自動抽出タグとマージ） |
 | `importance` | No | 重要度（0.0-1.0、デフォルト0.5） |
+| `summary` | No | 要約（省略時は自動生成） |
 | `metadata` | No | メタデータ（JSON形式） |
+| `expires_at` | No | 有効期限（ISO 8601形式、省略時は自動TTL計算） |
 
 ### 記憶の検索
 
@@ -201,8 +204,14 @@ GET /search?query={検索文字列}&scope_id={プロジェクトID}
 | パラメータ | 必須 | 説明 |
 |-----------|------|------|
 | `query` | Yes | 検索キーワード |
+| `scope` | No | スコープでフィルタ |
 | `scope_id` | No | プロジェクトIDで絞り込み |
+| `type` | No | タイプでフィルタ |
+| `category` | No | カテゴリでフィルタ |
+| `tags` | No | タグでフィルタ（カンマ区切り） |
 | `include_deprecated` | No | `true` で廃止済みも含める |
+| `limit` | No | 最大件数（デフォルト: 10、最大: 100） |
+| `offset` | No | 結果のオフセット（デフォルト: 0） |
 
 ### 記憶の廃止
 
@@ -215,7 +224,7 @@ PATCH /memory/{id}/deprecate
 | `deprecated` | Yes | `true` で廃止、`false` で復元 |
 | `superseded_by` | No | 後継の記憶ID |
 
-### 記憶のメタデータ更新
+### 記憶の更新
 
 ```
 PATCH /memory/{id}
@@ -223,6 +232,7 @@ PATCH /memory/{id}
 
 | パラメータ | 必須 | 説明 |
 |-----------|------|------|
+| `content` | No | 新しいコンテンツ |
 | `category` | No | 新しいカテゴリ |
 | `tags` | No | 新しいタグ（上書き） |
 | `add_tags` | No | 追加するタグ |
@@ -230,6 +240,11 @@ PATCH /memory/{id}
 | `importance` | No | 新しい重要度 |
 | `summary` | No | 新しい要約 |
 | `metadata` | No | メタデータの更新（既存とマージ） |
+
+**注意**:
+- `scope`, `scope_id`, `type` は変更不可（イミュータブルフィールド）
+- これらのフィールドを送信した場合、無視されて `warnings` フィールドで通知されます
+- スコープ変更が必要な場合は `POST /store` の `supersedes` を使って新規作成してください
 
 ### 個人TODO一覧の取得
 
