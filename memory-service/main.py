@@ -1105,9 +1105,23 @@ async def get_memory(
 async def update_memory(
     memory_id: str,
     update: MemoryUpdate,
+    request: Request,
     current_user: Optional[CurrentUser] = Depends(get_current_user)
 ):
     """記憶のコンテンツ、タグ、カテゴリ、重要度を更新"""
+    # イミュータブルフィールドの検出（scope/scope_id/type は変更不可）
+    warnings: list[str] = []
+    try:
+        raw_body = await request.json()
+        immutable_fields = {"scope", "scope_id", "type"}
+        sent_immutable = immutable_fields & set(raw_body.keys())
+        if sent_immutable:
+            warnings.append(
+                "scope, scope_id, type は変更できません（送信されたフィールドは無視されました）"
+            )
+    except Exception:
+        pass  # JSONパースに失敗した場合は無視（Pydantic側でバリデーションされる）
+
     with get_db() as conn:
         # 記憶を取得
         cursor = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,))
@@ -1204,13 +1218,16 @@ async def update_memory(
             details={"updates": updates}
         )
 
-        return {
+        response = {
             "id": memory_id,
             "message": "Memory updated",
             "category": updated_row["category"],
             "tags": json.loads(updated_row["tags"]) if updated_row["tags"] else [],
             "importance": updated_row["importance"]
         }
+        if warnings:
+            response["warnings"] = warnings
+        return response
 
 
 @app.delete("/memory/{memory_id}")
