@@ -32,5 +32,8 @@ htmlcov/
 # Local config (contains personal settings)
 # Note: .isac.yaml is project-specific and should be committed
 
+# ISAC secrets (DO NOT commit)
+.isac.secrets.yaml
+
 # Scratchpad
 scratchpad/
