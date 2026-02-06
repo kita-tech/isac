@@ -85,18 +85,45 @@ echo ""
 # 前提条件チェック
 echo -e "${YELLOW}前提条件チェック...${NC}"
 
-# Memory Serviceの起動確認
-MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
-if ! curl -s --connect-timeout 2 "$MEMORY_URL/health" > /dev/null 2>&1; then
-    echo -e "${RED}ERROR: Memory Service が起動していません${NC}"
+# テスト用ポート（通常運用の 8100 と分離）
+TEST_PORT=8200
+TEST_PROJECT_NAME="isac-memory-test"
+MEMORY_URL="http://localhost:${TEST_PORT}"
+export MEMORY_SERVICE_URL="$MEMORY_URL"
+export ISAC_TEST_URL="$MEMORY_URL"
+
+# テスト用コンテナの起動（-p でプロジェクト名を分離し、通常運用コンテナに影響しない）
+echo -e "${YELLOW}テスト用 Memory Service コンテナを起動中 (ポート: ${TEST_PORT})...${NC}"
+docker compose -p "$TEST_PROJECT_NAME" -f "$PROJECT_DIR/memory-service/docker-compose.test.yml" up -d --build 2>&1 | while read -r line; do
+    echo "  $line"
+done
+
+# テスト終了時にコンテナを停止・削除（Ctrl+C 含む）
+cleanup_containers() {
     echo ""
-    echo "以下のコマンドで起動してください:"
-    echo "  cd $PROJECT_DIR/memory-service"
-    echo "  docker compose up -d"
-    echo ""
-    exit 1
-fi
-echo -e "${GREEN}✓ Memory Service: OK${NC}"
+    echo -e "${YELLOW}テスト用コンテナを停止・削除中...${NC}"
+    docker compose -p "$TEST_PROJECT_NAME" -f "$PROJECT_DIR/memory-service/docker-compose.test.yml" down -v 2>/dev/null
+    echo -e "${GREEN}✓ クリーンアップ完了${NC}"
+}
+trap cleanup_containers EXIT
+
+# ヘルスチェック待機（最大30秒）
+echo -e "${YELLOW}ヘルスチェック待機中...${NC}"
+MAX_WAIT=30
+WAITED=0
+while ! curl -s --connect-timeout 2 "$MEMORY_URL/health" > /dev/null 2>&1; do
+    if [ $WAITED -ge $MAX_WAIT ]; then
+        echo -e "${RED}ERROR: Memory Service が ${MAX_WAIT}秒以内に起動しませんでした${NC}"
+        echo ""
+        echo "ログを確認してください:"
+        echo "  docker compose -p $TEST_PROJECT_NAME -f $PROJECT_DIR/memory-service/docker-compose.test.yml logs"
+        echo ""
+        exit 1
+    fi
+    sleep 1
+    WAITED=$((WAITED + 1))
+done
+echo -e "${GREEN}✓ Memory Service: OK (ポート: ${TEST_PORT})${NC}"
 
 # jqの確認
 if ! command -v jq &> /dev/null; then

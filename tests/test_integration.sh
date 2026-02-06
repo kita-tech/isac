@@ -21,7 +21,7 @@ PASSED=0
 FAILED=0
 
 # 環境変数
-export MEMORY_SERVICE_URL="http://localhost:8100"
+export MEMORY_SERVICE_URL="${MEMORY_SERVICE_URL:-http://localhost:8200}"
 
 # テスト用の一意なプロジェクトID
 TEST_PROJECT="integration-test-$(date +%s)"

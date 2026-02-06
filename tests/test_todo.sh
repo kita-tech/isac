@@ -6,7 +6,7 @@
 #   bash tests/test_todo.sh
 #
 # 前提条件:
-#   - Memory Service が http://localhost:8100 で起動していること
+#   - Memory Service が http://localhost:8200 で起動していること
 #   - jq がインストールされていること
 
 # カラー出力
@@ -20,7 +20,7 @@ declare -i PASSED=0
 declare -i FAILED=0
 
 # 環境変数
-MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8200}"
 PROJECT_ID="test-todo-$$"
 USER_EMAIL="test-user-$$@example.com"
 

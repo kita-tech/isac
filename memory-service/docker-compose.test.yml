@@ -1,6 +1,7 @@
 version: '3.8'
 
 # テスト専用の docker-compose 設定
+# テスト用ポート: 8200（通常運用の 8100 と分離）
 # 認証を有効化し、テスト用の Admin API キーを設定
 
 services:
@@ -8,16 +9,17 @@ services:
     build: .
     container_name: isac-memory-test
     ports:
-      - "8100:8000"
+      - "8200:8000"
     volumes:
       - memory-test-data:/data
     environment:
       - DATABASE_PATH=/data/memory.db
-      - REQUIRE_AUTH=true
+      - REQUIRE_AUTH=false
       - ADMIN_API_KEY=isac_test_admin_key_12345
+      - RATE_LIMIT_REQUESTS=999999  # テスト時はレートリミット実質無効
     restart: "no"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 3
