@@ -172,7 +172,11 @@ class ProjectMemberAdd(BaseModel):
 
 
 class MemoryUpdate(BaseModel):
-    """記憶の更新リクエスト"""
+    """記憶の更新リクエスト
+
+    Note: scope/scope_id/type は変更不可（履歴保持のため）。
+    スコープ昇格（例: project→global）は supersedes 付きで新規作成し旧記憶を廃止する。
+    """
     content: Optional[str] = Field(None, description="新しいコンテンツ")
     category: Optional[MemoryCategory] = Field(None, description="新しいカテゴリ")
     tags: Optional[list[str]] = Field(None, description="新しいタグ（上書き）")
