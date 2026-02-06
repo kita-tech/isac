@@ -404,16 +404,16 @@ RESULT=$(curl -s -X POST "$MEMORY_URL/store" \
       metadata: { owner: $owner, status: "pending" }
     }')")
 
-# 空文字でも保存される（APIレベルでは制限なし）
-if [ "$(echo "$RESULT" | jq -r '.id')" != "null" ]; then
-    echo -e "${GREEN}✓ PASS${NC}: 空文字タスクが保存される（API許容）"
+# 空文字はバリデーションエラー（422）になるべき
+if echo "$RESULT" | jq -e '.detail' > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ PASS${NC}: 空文字タスクが拒否される（422バリデーションエラー）"
     PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 空文字タスクが保存されてしまった"
+    FAILED=$((FAILED + 1))
     # クリーンアップ
     EMPTY_TODO_ID=$(echo "$RESULT" | jq -r '.id')
     curl -s -X DELETE "$MEMORY_URL/memory/$EMPTY_TODO_ID" > /dev/null 2>&1
-else
-    echo -e "${RED}✗ FAIL${NC}: 空文字タスクの保存に失敗"
-    FAILED=$((FAILED + 1))
 fi
 
 # テスト16: 同一内容の重複登録
