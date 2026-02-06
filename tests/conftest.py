@@ -164,3 +164,70 @@ def unique_scope_id() -> str:
     """テストごとにユニークな scope_id を生成"""
     import uuid
     return f"test-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def special_chars() -> list[str]:
+    """
+    特殊文字テスト用データ
+
+    テスト対象:
+    - 改行文字（LF, CR, CRLF）
+    - 引用符（シングル、ダブル、バッククォート）
+    - エスケープ文字
+    - 制御文字
+    - 日本語・絵文字
+    - SQL/HTMLインジェクション風文字列
+    """
+    return [
+        # 改行文字
+        "line1\nline2",
+        "line1\rline2",
+        "line1\r\nline2",
+        # 引用符
+        "single'quote",
+        'double"quote',
+        "back`tick",
+        # エスケープ文字
+        "back\\slash",
+        "tab\there",
+        # 制御文字
+        "null\x00char",
+        # 日本語・絵文字
+        "日本語テスト",
+        "emoji test \\U0001F4DD",
+        # SQL/HTMLインジェクション風
+        "'; DROP TABLE memories; --",
+        "<script>alert('xss')</script>",
+        # 複合パターン
+        "mixed\n'quote\"\tand\\slash",
+    ]
+
+
+@pytest.fixture
+def boundary_values() -> dict:
+    """
+    境界値テスト用データ
+
+    各パラメータの最小値、最大値、境界外の値を定義
+    """
+    return {
+        "importance": {
+            "min": 0.0,
+            "max": 1.0,
+            "valid": [0.0, 0.5, 1.0],
+            "invalid": [-0.1, 1.1, -1.0, 2.0],
+        },
+        "limit": {
+            "min": 1,
+            "max": 100,
+            "valid": [1, 50, 100],
+            "invalid": [0, -1, 101],
+        },
+        "max_tokens": {
+            "min": 1,
+            "max": 100000,
+            "valid": [1, 1000, 100000],
+            "invalid": [0, -1],
+        },
+    }

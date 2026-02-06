@@ -1,0 +1,15 @@
+[run]
+source = memory-service
+omit =
+    tests/*
+    */__pycache__/*
+    */conftest.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+
+[html]
+directory = htmlcov

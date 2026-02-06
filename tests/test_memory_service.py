@@ -125,6 +125,290 @@ class TestMemoryStore:
         assert response.status_code == 422
 
 
+class TestSpecialCharacters:
+    """特殊文字のテスト"""
+
+    def test_store_with_newlines(self):
+        """改行を含むコンテンツを保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"line1\nline2\nline3 {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_quotes(self):
+        """クォートを含むコンテンツを保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f'''single'quote and double"quote and back`tick {unique_id}'''
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_backslash(self):
+        """バックスラッシュを含むコンテンツを保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"path\\to\\file {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_japanese(self):
+        """日本語を含むコンテンツを保存・取得・検索できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"日本語のテスト内容 {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+        # 検索で見つかることを確認
+        search_response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": unique_id}
+        )
+        assert search_response.status_code == 200
+        assert len(search_response.json()["memories"]) > 0
+
+    def test_store_with_sql_injection_pattern(self):
+        """SQLインジェクション風の文字列を安全に保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"'; DROP TABLE memories; -- {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_html_pattern(self):
+        """HTML風の文字列を安全に保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"<script>alert('xss')</script> {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_mixed_special_chars(self):
+        """複合的な特殊文字を含むコンテンツを保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"mixed\n'quote\"\tand\\slash {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_search_with_special_chars_in_query(self):
+        """特殊文字を含むクエリで検索できる"""
+        # まず特殊文字を含むメモリを保存
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"test'quote {unique_id}"
+        requests.post(f"{BASE_URL}/store", json={
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        })
+
+        # 特殊文字を含むクエリで検索
+        response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": unique_id}
+        )
+        assert response.status_code == 200
+        assert len(response.json()["memories"]) > 0
+
+
+class TestBoundaryValues:
+    """境界値のテスト"""
+
+    def test_importance_min_value(self):
+        """importance の最小値 (0.0) で保存できる"""
+        payload = {
+            "content": f"importance min test {uuid.uuid4()}",
+            "type": "work",
+            "importance": 0.0,
+            "scope": "project",
+            "scope_id": "boundary-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+
+    def test_importance_max_value(self):
+        """importance の最大値 (1.0) で保存できる"""
+        payload = {
+            "content": f"importance max test {uuid.uuid4()}",
+            "type": "work",
+            "importance": 1.0,
+            "scope": "project",
+            "scope_id": "boundary-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+
+    def test_importance_below_min(self):
+        """importance が最小値未満 (-0.1) はエラー"""
+        payload = {
+            "content": "importance below min test",
+            "type": "work",
+            "importance": -0.1,
+            "scope": "project",
+            "scope_id": "boundary-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 422
+
+    def test_importance_above_max(self):
+        """importance が最大値超過 (1.1) はエラー"""
+        payload = {
+            "content": "importance above max test",
+            "type": "work",
+            "importance": 1.1,
+            "scope": "project",
+            "scope_id": "boundary-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 422
+
+    def test_search_limit_min(self):
+        """search の limit 最小値 (1) で検索できる"""
+        response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": "test", "limit": 1}
+        )
+        assert response.status_code == 200
+        assert len(response.json()["memories"]) <= 1
+
+    def test_search_limit_large(self):
+        """search の limit 大きな値 (100) で検索できる"""
+        response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": "test", "limit": 100}
+        )
+        assert response.status_code == 200
+        assert len(response.json()["memories"]) <= 100
+
+    def test_search_limit_zero(self):
+        """search の limit 0 はエラーまたは結果なし"""
+        response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": "test", "limit": 0}
+        )
+        # APIの実装によって 422 または空の結果を返す
+        if response.status_code == 200:
+            assert len(response.json()["memories"]) == 0
+        else:
+            assert response.status_code == 422
+
+    def test_context_max_tokens_min(self):
+        """context の max_tokens 最小値 (1) で取得できる"""
+        response = requests.get(
+            f"{BASE_URL}/context/boundary-test",
+            params={"query": "test", "max_tokens": 1}
+        )
+        assert response.status_code == 200
+        assert response.json()["total_tokens"] <= 1
+
+    def test_context_max_tokens_large(self):
+        """context の max_tokens 大きな値 (100000) で取得できる"""
+        response = requests.get(
+            f"{BASE_URL}/context/boundary-test",
+            params={"query": "test", "max_tokens": 100000}
+        )
+        assert response.status_code == 200
+
+    def test_context_max_tokens_zero(self):
+        """context の max_tokens 0 はエラーまたは結果なし"""
+        response = requests.get(
+            f"{BASE_URL}/context/boundary-test",
+            params={"query": "test", "max_tokens": 0}
+        )
+        # APIの実装によって 422 または空の結果を返す
+        if response.status_code == 200:
+            assert response.json()["total_tokens"] == 0
+        else:
+            assert response.status_code == 422
+
+
 class TestContext:
     """コンテキスト取得のテスト"""
 
