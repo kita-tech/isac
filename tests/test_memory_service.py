@@ -2530,9 +2530,11 @@ class TestUpdateImmutableFields:
         assert response.status_code == 200
         self.memory_id = response.json()["id"]
 
+    # --- 既存テスト: 正常値でイミュータブルフィールドが無視されることを検証 ---
+
     def test_patch_scope_ignored(self):
         """PATCH で scope を送信しても変更されない"""
-        requests.patch(
+        response = requests.patch(
             f"{BASE_URL}/memory/{self.memory_id}",
             json={"scope": "global", "summary": "updated"}
         )
@@ -2541,7 +2543,7 @@ class TestUpdateImmutableFields:
 
     def test_patch_scope_id_ignored(self):
         """PATCH で scope_id を送信しても変更されない"""
-        requests.patch(
+        response = requests.patch(
             f"{BASE_URL}/memory/{self.memory_id}",
             json={"scope_id": "other-project", "summary": "updated"}
         )
@@ -2550,12 +2552,123 @@ class TestUpdateImmutableFields:
 
     def test_patch_type_ignored(self):
         """PATCH で type を送信しても変更されない"""
-        requests.patch(
+        response = requests.patch(
             f"{BASE_URL}/memory/{self.memory_id}",
             json={"type": "decision", "summary": "updated"}
         )
         result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
         assert result["type"] == "work", "type が変更されてしまった"
+
+    # --- エッジケーステスト: null/空文字列でイミュータブルフィールドを送信 ---
+
+    def test_patch_scope_null_ignored(self):
+        """PATCH で scope=null を送信しても変更されない"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope": None, "summary": "updated with null scope"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["scope"] == "project", "scope=null で変更されてしまった"
+
+    def test_patch_scope_empty_string_ignored(self):
+        """PATCH で scope=空文字列を送信しても変更されない"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope": "", "summary": "updated with empty scope"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["scope"] == "project", "scope=空文字列で変更されてしまった"
+
+    def test_patch_scope_id_null_ignored(self):
+        """PATCH で scope_id=null を送信しても変更されない"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope_id": None, "summary": "updated with null scope_id"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["scope_id"] == "immutable-test", "scope_id=null で変更されてしまった"
+
+    def test_patch_scope_id_empty_string_ignored(self):
+        """PATCH で scope_id=空文字列を送信しても変更されない"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope_id": "", "summary": "updated with empty scope_id"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["scope_id"] == "immutable-test", "scope_id=空文字列で変更されてしまった"
+
+    def test_patch_type_null_ignored(self):
+        """PATCH で type=null を送信しても変更されない"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"type": None, "summary": "updated with null type"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["type"] == "work", "type=null で変更されてしまった"
+
+    def test_patch_type_empty_string_ignored(self):
+        """PATCH で type=空文字列を送信しても変更されない"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"type": "", "summary": "updated with empty type"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["type"] == "work", "type=空文字列で変更されてしまった"
+
+    # --- warnings フィールド検証テスト ---
+
+    def test_patch_immutable_field_returns_warning(self):
+        """イミュータブルフィールドを送信すると warnings が返される"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope": "global", "summary": "updated"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "warnings" in data, "warnings フィールドが返されない"
+        assert len(data["warnings"]) > 0, "warnings が空"
+        assert "変更できません" in data["warnings"][0], "warning メッセージが不正"
+
+    def test_patch_multiple_immutable_fields_returns_warning(self):
+        """複数のイミュータブルフィールドを送信しても warning は1つ"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope": "global", "scope_id": "other", "type": "decision", "summary": "updated"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "warnings" in data, "warnings フィールドが返されない"
+        assert len(data["warnings"]) == 1, "warning が複数ある"
+
+    def test_patch_immutable_null_returns_warning(self):
+        """イミュータブルフィールドをnullで送信しても warnings が返される"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope": None, "summary": "updated"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "warnings" in data, "null送信時に warnings フィールドが返されない"
+
+    def test_patch_immutable_empty_string_returns_warning(self):
+        """イミュータブルフィールドを空文字列で送信しても warnings が返される"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"type": "", "summary": "updated"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "warnings" in data, "空文字列送信時に warnings フィールドが返されない"
+
+    def test_patch_no_immutable_field_no_warning(self):
+        """イミュータブルフィールドを送信しなければ warnings は返されない"""
+        response = requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"summary": "updated without immutable fields"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "warnings" not in data, "不要な warnings フィールドが返された"
 
 
 class TestBoundaryValuesComprehensive:
