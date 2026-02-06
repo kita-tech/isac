@@ -26,6 +26,8 @@ Thumbs.db
 # Test artifacts
 /private/tmp/
 *.log
+.coverage
+htmlcov/
 
 # Local config (contains personal settings)
 # Note: .isac.yaml is project-specific and should be committed
