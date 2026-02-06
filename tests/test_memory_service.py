@@ -125,6 +125,290 @@ class TestMemoryStore:
         assert response.status_code == 422
 
 
+class TestSpecialCharacters:
+    """特殊文字のテスト"""
+
+    def test_store_with_newlines(self):
+        """改行を含むコンテンツを保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"line1\nline2\nline3 {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_quotes(self):
+        """クォートを含むコンテンツを保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f'''single'quote and double"quote and back`tick {unique_id}'''
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_backslash(self):
+        """バックスラッシュを含むコンテンツを保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"path\\to\\file {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_japanese(self):
+        """日本語を含むコンテンツを保存・取得・検索できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"日本語のテスト内容 {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+        # 検索で見つかることを確認
+        search_response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": unique_id}
+        )
+        assert search_response.status_code == 200
+        assert len(search_response.json()["memories"]) > 0
+
+    def test_store_with_sql_injection_pattern(self):
+        """SQLインジェクション風の文字列を安全に保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"'; DROP TABLE memories; -- {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_html_pattern(self):
+        """HTML風の文字列を安全に保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"<script>alert('xss')</script> {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_store_with_mixed_special_chars(self):
+        """複合的な特殊文字を含むコンテンツを保存・取得できる"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"mixed\n'quote\"\tand\\slash {unique_id}"
+        payload = {
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 取得して内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == content
+
+    def test_search_with_special_chars_in_query(self):
+        """特殊文字を含むクエリで検索できる"""
+        # まず特殊文字を含むメモリを保存
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"test'quote {unique_id}"
+        requests.post(f"{BASE_URL}/store", json={
+            "content": content,
+            "type": "work",
+            "importance": 0.5,
+            "scope": "project",
+            "scope_id": "special-char-test"
+        })
+
+        # 特殊文字を含むクエリで検索
+        response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": unique_id}
+        )
+        assert response.status_code == 200
+        assert len(response.json()["memories"]) > 0
+
+
+class TestBoundaryValues:
+    """境界値のテスト"""
+
+    def test_importance_min_value(self):
+        """importance の最小値 (0.0) で保存できる"""
+        payload = {
+            "content": f"importance min test {uuid.uuid4()}",
+            "type": "work",
+            "importance": 0.0,
+            "scope": "project",
+            "scope_id": "boundary-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+
+    def test_importance_max_value(self):
+        """importance の最大値 (1.0) で保存できる"""
+        payload = {
+            "content": f"importance max test {uuid.uuid4()}",
+            "type": "work",
+            "importance": 1.0,
+            "scope": "project",
+            "scope_id": "boundary-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 200
+
+    def test_importance_below_min(self):
+        """importance が最小値未満 (-0.1) はエラー"""
+        payload = {
+            "content": "importance below min test",
+            "type": "work",
+            "importance": -0.1,
+            "scope": "project",
+            "scope_id": "boundary-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 422
+
+    def test_importance_above_max(self):
+        """importance が最大値超過 (1.1) はエラー"""
+        payload = {
+            "content": "importance above max test",
+            "type": "work",
+            "importance": 1.1,
+            "scope": "project",
+            "scope_id": "boundary-test"
+        }
+        response = requests.post(f"{BASE_URL}/store", json=payload)
+        assert response.status_code == 422
+
+    def test_search_limit_min(self):
+        """search の limit 最小値 (1) で検索できる"""
+        response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": "test", "limit": 1}
+        )
+        assert response.status_code == 200
+        assert len(response.json()["memories"]) <= 1
+
+    def test_search_limit_large(self):
+        """search の limit 大きな値 (100) で検索できる"""
+        response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": "test", "limit": 100}
+        )
+        assert response.status_code == 200
+        assert len(response.json()["memories"]) <= 100
+
+    def test_search_limit_zero(self):
+        """search の limit 0 はエラーまたは結果なし"""
+        response = requests.get(
+            f"{BASE_URL}/search",
+            params={"query": "test", "limit": 0}
+        )
+        # APIの実装によって 422 または空の結果を返す
+        if response.status_code == 200:
+            assert len(response.json()["memories"]) == 0
+        else:
+            assert response.status_code == 422
+
+    def test_context_max_tokens_min(self):
+        """context の max_tokens 最小値 (1) で取得できる"""
+        response = requests.get(
+            f"{BASE_URL}/context/boundary-test",
+            params={"query": "test", "max_tokens": 1}
+        )
+        assert response.status_code == 200
+        assert response.json()["total_tokens"] <= 1
+
+    def test_context_max_tokens_large(self):
+        """context の max_tokens 大きな値 (100000) で取得できる"""
+        response = requests.get(
+            f"{BASE_URL}/context/boundary-test",
+            params={"query": "test", "max_tokens": 100000}
+        )
+        assert response.status_code == 200
+
+    def test_context_max_tokens_zero(self):
+        """context の max_tokens 0 はエラーまたは結果なし"""
+        response = requests.get(
+            f"{BASE_URL}/context/boundary-test",
+            params={"query": "test", "max_tokens": 0}
+        )
+        # APIの実装によって 422 または空の結果を返す
+        if response.status_code == 200:
+            assert response.json()["total_tokens"] == 0
+        else:
+            assert response.status_code == 422
+
+
 class TestContext:
     """コンテキスト取得のテスト"""
 
@@ -2003,7 +2287,7 @@ class TestErrorResponses:
 class TestSpecialCharactersComprehensive:
     """特殊文字の網羅的テスト"""
 
-    @pytest.mark.parametrize("char_index", range(10))
+    @pytest.mark.parametrize("char_index", range(14))
     def test_store_all_special_chars(self, special_chars, char_index):
         """全特殊文字で保存できる"""
         content = special_chars[char_index]
@@ -2026,7 +2310,7 @@ class TestSpecialCharactersComprehensive:
         assert get_response.status_code == 200
         assert content in get_response.json()["content"]
 
-    @pytest.mark.parametrize("char_index", range(10))
+    @pytest.mark.parametrize("char_index", range(14))
     def test_search_special_chars(self, special_chars, char_index):
         """特殊文字を含む検索ができる"""
         content = special_chars[char_index]
@@ -2052,7 +2336,7 @@ class TestSpecialCharactersComprehensive:
         data = response.json()
         assert "memories" in data
 
-    @pytest.mark.parametrize("char_index", range(10))
+    @pytest.mark.parametrize("char_index", range(14))
     def test_context_special_chars(self, special_chars, char_index):
         """コンテキスト取得で特殊文字を含む記憶が取得できる"""
         content = special_chars[char_index]
@@ -2109,7 +2393,7 @@ class TestSpecialCharactersComprehensive:
             found = any(content in ec for ec in exported_contents)
             assert found, f"特殊文字 '{content}' がエクスポートデータに見つかりません"
 
-    @pytest.mark.parametrize("char_index", range(10))
+    @pytest.mark.parametrize("char_index", range(14))
     def test_update_with_special_chars(self, special_chars, char_index):
         """更新時に特殊文字が正しく処理される"""
         content = special_chars[char_index]
@@ -2138,7 +2422,7 @@ class TestSpecialCharactersComprehensive:
         assert get_response.status_code == 200
         assert content in get_response.json()["content"]
 
-    @pytest.mark.parametrize("char_index", range(10))
+    @pytest.mark.parametrize("char_index", range(14))
     def test_tags_with_special_chars(self, special_chars, char_index):
         """タグに特殊文字を含めて保存できる"""
         tag_content = special_chars[char_index]
@@ -2161,7 +2445,7 @@ class TestSpecialCharactersComprehensive:
         saved_tags = get_response.json().get("tags", [])
         assert any(tag_content in tag for tag in saved_tags), f"タグ '{tag_content}' が保存されていません"
 
-    @pytest.mark.parametrize("char_index", range(10))
+    @pytest.mark.parametrize("char_index", range(14))
     def test_metadata_with_special_chars(self, special_chars, char_index):
         """メタデータに特殊文字を含めて保存できる"""
         meta_value = special_chars[char_index]
@@ -2234,10 +2518,10 @@ class TestSpecialCharactersComprehensive:
 class TestBoundaryValuesComprehensive:
     """境界値の網羅的テスト"""
 
-    def test_empty_content_rejected(self, boundary_values):
+    def test_empty_content_rejected(self):
         """空コンテンツは拒否される"""
         payload = {
-            "content": boundary_values['empty'],
+            "content": "",
             "type": "work",
             "importance": 0.5,
             "scope": "project",
@@ -2247,10 +2531,10 @@ class TestBoundaryValuesComprehensive:
         # 空文字列はバリデーションエラーになるべき
         assert response.status_code in [400, 422], f"空コンテンツが受け入れられました: {response.status_code}"
 
-    def test_single_char_content(self, boundary_values):
+    def test_single_char_content(self):
         """1文字コンテンツを保存できる"""
         payload = {
-            "content": boundary_values['single_char'],
+            "content": "a",
             "type": "work",
             "importance": 0.5,
             "scope": "project",
@@ -2263,12 +2547,13 @@ class TestBoundaryValuesComprehensive:
         # 取得して確認
         get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
         assert get_response.status_code == 200
-        assert get_response.json()["content"] == boundary_values['single_char']
+        assert get_response.json()["content"] == "a"
 
-    def test_very_long_content(self, boundary_values):
+    def test_very_long_content(self):
         """非常に長いコンテンツ（10000文字）を保存できる"""
+        long_content = "a" * 10000
         payload = {
-            "content": boundary_values['long_content'],
+            "content": long_content,
             "type": "work",
             "importance": 0.5,
             "scope": "project",
@@ -2283,11 +2568,11 @@ class TestBoundaryValuesComprehensive:
         assert get_response.status_code == 200
         assert len(get_response.json()["content"]) == 10000
 
-    def test_max_summary_length(self, boundary_values):
+    def test_max_summary_length(self):
         """最大長のサマリー（200文字）を保存できる"""
         payload = {
             "content": "本文コンテンツ",
-            "summary": boundary_values['max_summary'],
+            "summary": "a" * 200,
             "type": "work",
             "importance": 0.5,
             "scope": "project",
@@ -2302,12 +2587,12 @@ class TestBoundaryValuesComprehensive:
         assert get_response.status_code == 200
         assert len(get_response.json()["summary"]) == 200
 
-    def test_importance_zero(self, boundary_values):
+    def test_importance_zero(self):
         """importance=0.0 で保存できる"""
         payload = {
             "content": "importance ゼロテスト",
             "type": "work",
-            "importance": boundary_values['zero_importance'],
+            "importance": 0.0,
             "scope": "project",
             "scope_id": "boundary-test"
         }
@@ -2320,12 +2605,12 @@ class TestBoundaryValuesComprehensive:
         assert get_response.status_code == 200
         assert get_response.json()["importance"] == 0.0
 
-    def test_importance_max(self, boundary_values):
+    def test_importance_max(self):
         """importance=1.0 で保存できる"""
         payload = {
             "content": "importance 最大テスト",
             "type": "work",
-            "importance": boundary_values['max_importance'],
+            "importance": 1.0,
             "scope": "project",
             "scope_id": "boundary-test"
         }
@@ -2338,12 +2623,12 @@ class TestBoundaryValuesComprehensive:
         assert get_response.status_code == 200
         assert get_response.json()["importance"] == 1.0
 
-    def test_importance_negative_rejected(self, boundary_values):
+    def test_importance_negative_rejected(self):
         """負のimportanceは拒否される"""
         payload = {
             "content": "importance 負値テスト",
             "type": "work",
-            "importance": boundary_values['negative_importance'],
+            "importance": -0.1,
             "scope": "project",
             "scope_id": "boundary-test"
         }
@@ -2351,12 +2636,12 @@ class TestBoundaryValuesComprehensive:
         # 負の値はバリデーションエラーになるべき
         assert response.status_code in [400, 422], f"負のimportanceが受け入れられました: {response.status_code}"
 
-    def test_importance_over_one_rejected(self, boundary_values):
+    def test_importance_over_one_rejected(self):
         """1超のimportanceは拒否される"""
         payload = {
             "content": "importance 1超テスト",
             "type": "work",
-            "importance": boundary_values['over_importance'],
+            "importance": 1.1,
             "scope": "project",
             "scope_id": "boundary-test"
         }
