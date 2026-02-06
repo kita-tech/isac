@@ -8,7 +8,7 @@ ISAC Memory Service API テスト
     pytest tests/ -v
 
 前提条件:
-    - Memory Service が http://localhost:8100 で起動していること
+    - Memory Service が http://localhost:8200 で起動していること
 """
 
 import pytest
@@ -16,7 +16,7 @@ import requests
 import uuid
 from datetime import datetime
 
-BASE_URL = "http://localhost:8100"
+BASE_URL = "http://localhost:8200"
 
 
 class TestHealthCheck:
@@ -1120,6 +1120,37 @@ class TestStoreParameters:
         # 自動タグ付けの実装によって値は異なる可能性がある
         assert "tags" in memory
 
+    def test_store_with_invalid_expires_at(self):
+        """不正な expires_at 形式は422で拒否される"""
+        invalid_values = [
+            "not-a-date",
+            "2025/12/31",
+            "yesterday",
+            "'; DROP TABLE memories; --",
+        ]
+        for value in invalid_values:
+            response = requests.post(f"{BASE_URL}/store", json={
+                "content": "expires_atバリデーションテスト",
+                "type": "work",
+                "scope": "project",
+                "scope_id": "expires-validation-test",
+                "expires_at": value
+            })
+            assert response.status_code == 422, \
+                f"不正な expires_at '{value}' が受け入れられました: {response.status_code}"
+
+    def test_store_with_empty_expires_at_uses_auto_ttl(self):
+        """expires_at が空文字の場合は自動TTLが適用される"""
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "空expires_atテスト",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "expires-empty-test",
+            "expires_at": ""
+        })
+        # 空文字は falsy なので自動TTLが使われ、正常に保存される
+        assert response.status_code == 200
+
 
 class TestSecurity:
     """セキュリティ関連のテスト"""
@@ -1236,8 +1267,8 @@ class TestSecurity:
             assert response.status_code == 404, f"Expected 404 for payload: {payload}"
 
     def test_large_content_handling(self):
-        """非常に大きなコンテンツ（1MB）の処理"""
-        # 1MBのコンテンツを生成
+        """非常に大きなコンテンツ（1MB）は422で拒否される"""
+        # 1MBのコンテンツを生成（上限65,536文字を大幅に超過）
         large_content = "A" * (1024 * 1024)
 
         response = requests.post(f"{BASE_URL}/store", json={
@@ -1245,18 +1276,15 @@ class TestSecurity:
             "type": "work",
             "scope": "project",
             "scope_id": "security-test"
-        })
-        # 保存が成功するか、適切なエラーレスポンスが返ることを確認
-        # （500エラーにならない）
-        assert response.status_code in [200, 413, 422], \
+        }, timeout=30)
+        # サイズ制限により422が返ること
+        assert response.status_code == 422, \
             f"Unexpected status code: {response.status_code}"
-
-        if response.status_code == 200:
-            data = response.json()
-            memory_id = data["id"]
-            # 保存されたデータを取得
-            get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
-            assert get_response.status_code == 200
+        data = response.json()
+        detail = data["detail"]
+        assert detail["current_length"] == 1024 * 1024
+        assert detail["max_length"] == 65536
+        assert "hint" in detail
 
     def test_unicode_normalization(self):
         """Unicode正規化（NFC/NFD）の扱い"""
@@ -2155,6 +2183,52 @@ class TestSpecialCharactersComprehensive:
         assert get_response.status_code == 200
         saved_metadata = get_response.json().get("metadata", {})
         assert saved_metadata.get("special_key") == meta_value, f"メタデータ値 '{meta_value}' が保存されていません"
+
+    def test_update_content_normal(self):
+        """PATCH でコンテンツを正常に更新できる"""
+        # 初期データ作成
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "更新前コンテンツ",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "update-content-test"
+        })
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # コンテンツ更新
+        update_response = requests.patch(
+            f"{BASE_URL}/memory/{memory_id}",
+            json={"content": "更新後コンテンツ"}
+        )
+        assert update_response.status_code == 200
+
+        # 更新内容を確認
+        get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["content"] == "更新後コンテンツ"
+
+    def test_update_content_over_max_rejected(self):
+        """PATCH で 65,536文字超のコンテンツ更新は422で拒否される"""
+        # 初期データ作成
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "初期コンテンツ",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "update-oversize-test"
+        })
+        assert response.status_code == 200
+        memory_id = response.json()["id"]
+
+        # 上限超のコンテンツで更新
+        update_response = requests.patch(
+            f"{BASE_URL}/memory/{memory_id}",
+            json={"content": "A" * 65537}
+        )
+        assert update_response.status_code == 422
+        detail = update_response.json()["detail"]
+        assert detail["current_length"] == 65537
+        assert detail["max_length"] == 65536
 
 
 class TestBoundaryValuesComprehensive:

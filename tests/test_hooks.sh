@@ -6,7 +6,7 @@
 #   bash tests/test_hooks.sh
 #
 # 前提条件:
-#   - Memory Service が http://localhost:8100 で起動していること
+#   - Memory Service が http://localhost:8200 で起動していること
 #   - jq がインストールされていること
 
 # エラー時も継続（テスト用）
@@ -29,7 +29,7 @@ HOOKS_DIR="$SCRIPT_DIR/.claude/hooks"
 BIN_DIR="$SCRIPT_DIR/bin"
 
 # 環境変数
-export MEMORY_SERVICE_URL="http://localhost:8100"
+export MEMORY_SERVICE_URL="${MEMORY_SERVICE_URL:-http://localhost:8200}"
 
 # クリーンアップ
 cleanup() {

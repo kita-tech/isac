@@ -51,6 +51,7 @@ RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
 RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))  # seconds
 
 DEFAULT_TTL_DAYS = {"decision": 365, "work": 30, "knowledge": 365}
+MAX_CONTENT_LENGTH = 65536  # コンテンツの最大文字数
 
 # トークンカウンター
 try:
@@ -112,6 +113,7 @@ class MemoryEntry(BaseModel):
     category: Optional[MemoryCategory] = None  # カテゴリ（任意）
     tags: list[str] = Field(default_factory=list)  # タグ（複数可）
     supersedes: list[str] = Field(default_factory=list)  # 廃止対象の記憶IDリスト
+    expires_at: Optional[str] = None  # 有効期限（ISO 8601形式、未指定時は自動TTL計算）
 
 
 class MemoryResponse(BaseModel):
@@ -128,6 +130,7 @@ class MemoryResponse(BaseModel):
     created_by: Optional[str]
     created_at: str
     tokens: int
+    expires_at: Optional[str] = None
     deprecated: bool = False
     superseded_by: Optional[str] = None
 
@@ -170,6 +173,7 @@ class ProjectMemberAdd(BaseModel):
 
 class MemoryUpdate(BaseModel):
     """記憶の更新リクエスト"""
+    content: Optional[str] = Field(None, description="新しいコンテンツ")
     category: Optional[MemoryCategory] = Field(None, description="新しいカテゴリ")
     tags: Optional[list[str]] = Field(None, description="新しいタグ（上書き）")
     add_tags: Optional[list[str]] = Field(None, description="追加するタグ")
@@ -188,6 +192,31 @@ def count_tokens(text: str) -> int:
     if ENCODER:
         return len(ENCODER.encode(text))
     return len(text) // 4
+
+
+def validate_content_length(content: str) -> None:
+    """コンテンツの文字数制限をチェック。超過時は HTTPException を送出。"""
+    if len(content) > MAX_CONTENT_LENGTH:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": f"コンテンツが上限を超えています（{MAX_CONTENT_LENGTH:,}文字以内にしてください）",
+                "current_length": len(content),
+                "max_length": MAX_CONTENT_LENGTH,
+                "hint": "内容を要約するか、複数の記憶に分割して保存してください"
+            }
+        )
+
+
+def validate_expires_at(expires_at: str) -> None:
+    """expires_at の ISO 8601 形式バリデーション。不正な場合は HTTPException を送出。"""
+    try:
+        datetime.fromisoformat(expires_at)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=422,
+            detail="expires_at は ISO 8601 形式で指定してください（例: 2025-12-31T23:59:59）"
+        )
 
 
 def generate_id() -> str:
@@ -672,6 +701,7 @@ def row_to_memory(row: sqlite3.Row) -> MemoryResponse:
         created_by=row["created_by"],
         created_at=row["created_at"],
         tokens=count_tokens(content),
+        expires_at=row["expires_at"] if "expires_at" in row.keys() else None,
         deprecated=bool(row["deprecated"]) if "deprecated" in row.keys() else False,
         superseded_by=row["superseded_by"] if "superseded_by" in row.keys() else None
     )
@@ -705,6 +735,11 @@ async def store_memory(
     """記憶を保存"""
     user_id = current_user.user_id if current_user else None
 
+    # バリデーション
+    validate_content_length(entry.content)
+    if entry.expires_at:
+        validate_expires_at(entry.expires_at)
+
     # レート制限
     client_ip = request.client.host if request.client else "unknown"
     if not check_rate_limit(user_id or client_ip):
@@ -724,9 +759,12 @@ async def store_memory(
     memory_id = generate_id()
     now = datetime.utcnow().isoformat()
 
-    # TTL計算
-    ttl_days = DEFAULT_TTL_DAYS.get(entry.type.value, 30)
-    expires_at = (datetime.utcnow() + timedelta(days=ttl_days)).isoformat()
+    # TTL計算（ユーザー指定があればそちらを優先）
+    if entry.expires_at:
+        expires_at = entry.expires_at
+    else:
+        ttl_days = DEFAULT_TTL_DAYS.get(entry.type.value, 30)
+        expires_at = (datetime.utcnow() + timedelta(days=ttl_days)).isoformat()
 
     # 要約生成
     summary = entry.summary or create_summary(entry.content)
@@ -1051,7 +1089,7 @@ async def update_memory(
     update: MemoryUpdate,
     current_user: Optional[CurrentUser] = Depends(get_current_user)
 ):
-    """記憶のタグ、カテゴリ、重要度を更新"""
+    """記憶のコンテンツ、タグ、カテゴリ、重要度を更新"""
     with get_db() as conn:
         # 記憶を取得
         cursor = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,))
@@ -1068,6 +1106,12 @@ async def update_memory(
         # 更新内容を構築
         updates = []
         params = []
+
+        # コンテンツの更新
+        if update.content is not None:
+            validate_content_length(update.content)
+            updates.append("content = ?")
+            params.append(update.content)
 
         # カテゴリの更新
         if update.category is not None:

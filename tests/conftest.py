@@ -13,8 +13,23 @@ from dataclasses import dataclass
 from typing import Optional
 
 # テスト設定
-BASE_URL = os.getenv("ISAC_TEST_URL", "http://localhost:8100")
+BASE_URL = os.getenv("ISAC_TEST_URL", "http://localhost:8200")
 ADMIN_API_KEY = os.getenv("ISAC_TEST_ADMIN_KEY", "isac_test_admin_key_12345")
+DEFAULT_TIMEOUT = 30  # 全リクエストのデフォルトタイムアウト（秒）
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _set_default_timeout():
+    """全テストの requests 呼び出しにデフォルトタイムアウトを設定"""
+    original_send = requests.Session.send
+
+    def patched_send(self, request, **kwargs):
+        kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
+        return original_send(self, request, **kwargs)
+
+    requests.Session.send = patched_send
+    yield
+    requests.Session.send = original_send
 
 
 @dataclass
@@ -37,17 +52,17 @@ class APIClient:
             return {"X-API-Key": self.api_key, "Content-Type": "application/json"}
         return {"Content-Type": "application/json"}
 
-    def post(self, path: str, json: dict) -> requests.Response:
-        return requests.post(f"{self.base_url}{path}", json=json, headers=self._headers())
+    def post(self, path: str, json: dict, timeout: int = DEFAULT_TIMEOUT) -> requests.Response:
+        return requests.post(f"{self.base_url}{path}", json=json, headers=self._headers(), timeout=timeout)
 
-    def get(self, path: str, params: dict = None) -> requests.Response:
-        return requests.get(f"{self.base_url}{path}", params=params, headers=self._headers())
+    def get(self, path: str, params: dict = None, timeout: int = DEFAULT_TIMEOUT) -> requests.Response:
+        return requests.get(f"{self.base_url}{path}", params=params, headers=self._headers(), timeout=timeout)
 
-    def patch(self, path: str, json: dict) -> requests.Response:
-        return requests.patch(f"{self.base_url}{path}", json=json, headers=self._headers())
+    def patch(self, path: str, json: dict, timeout: int = DEFAULT_TIMEOUT) -> requests.Response:
+        return requests.patch(f"{self.base_url}{path}", json=json, headers=self._headers(), timeout=timeout)
 
-    def delete(self, path: str) -> requests.Response:
-        return requests.delete(f"{self.base_url}{path}", headers=self._headers())
+    def delete(self, path: str, timeout: int = DEFAULT_TIMEOUT) -> requests.Response:
+        return requests.delete(f"{self.base_url}{path}", headers=self._headers(), timeout=timeout)
 
 
 @pytest.fixture(scope="session")

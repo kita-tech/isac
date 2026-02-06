@@ -4,14 +4,11 @@ ISAC の自動テストスイートです。
 
 ## 前提条件
 
-- Memory Service が起動していること
+- Docker が起動していること（テスト用コンテナはポート 8200 で自動起動されます）
 - `jq` がインストールされていること
 - （APIテストのみ）`pytest` と `requests` がインストールされていること
 
 ```bash
-# Memory Service 起動
-cd memory-service && docker compose up -d
-
 # jq インストール（未インストールの場合）
 brew install jq  # macOS
 apt-get install jq  # Ubuntu/Debian
@@ -19,6 +16,9 @@ apt-get install jq  # Ubuntu/Debian
 # Python依存関係（APIテスト用）
 pip install -r tests/requirements.txt
 ```
+
+> **注意**: テスト用 Memory Service はポート **8200** で起動します。
+> 通常運用（ポート 8100）とは分離されているため、テスト中も通常サービスに影響しません。
 
 ## テスト実行
 
@@ -107,12 +107,18 @@ bash tests/run_all_tests.sh --help
 
 ### Memory Service に接続できない
 
-```bash
-# 起動確認
-curl http://localhost:8100/health
+テストランナーはテスト用コンテナ（ポート 8200）を自動起動します。
+手動で確認する場合:
 
-# 再起動
-cd memory-service && docker compose down && docker compose up -d
+```bash
+# テスト用コンテナの起動確認
+curl http://localhost:8200/health
+
+# テスト用コンテナの手動起動
+cd memory-service && docker compose -f docker-compose.test.yml up -d --build
+
+# テスト用コンテナのログ確認
+docker compose -f memory-service/docker-compose.test.yml logs
 ```
 
 ### jq が見つからない
