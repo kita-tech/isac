@@ -2540,6 +2540,9 @@ class TestUpdateImmutableFields:
         )
         result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
         assert result["scope"] == "project", "scope が変更されてしまった"
+        # イミュータブルフィールド送信時の warnings 検証
+        data = response.json()
+        assert "warnings" in data, "warnings フィールドが返されない"
 
     def test_patch_scope_id_ignored(self):
         """PATCH で scope_id を送信しても変更されない"""
@@ -2549,6 +2552,9 @@ class TestUpdateImmutableFields:
         )
         result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
         assert result["scope_id"] == "immutable-test", "scope_id が変更されてしまった"
+        # イミュータブルフィールド送信時の warnings 検証
+        data = response.json()
+        assert "warnings" in data, "warnings フィールドが返されない"
 
     def test_patch_type_ignored(self):
         """PATCH で type を送信しても変更されない"""
@@ -2558,6 +2564,9 @@ class TestUpdateImmutableFields:
         )
         result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
         assert result["type"] == "work", "type が変更されてしまった"
+        # イミュータブルフィールド送信時の warnings 検証
+        data = response.json()
+        assert "warnings" in data, "warnings フィールドが返されない"
 
     # --- エッジケーステスト: null/空文字列でイミュータブルフィールドを送信 ---
 
