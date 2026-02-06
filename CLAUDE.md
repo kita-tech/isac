@@ -430,6 +430,24 @@ GET /context/{project_id}?query=xxx&include_deprecated=true
 - **履歴追跡**: `include_deprecated=true` で廃止済みも取得可能
 - **復元可能**: 廃止は論理削除のため、いつでも復元可能
 
+### スコープ昇格（project → global）
+
+`PATCH /memory/{id}` では `scope` を変更できない（履歴保持のため意図的に除外）。
+スコープを変更したい場合は、`supersedes` を使って新規作成し旧記憶を廃止する：
+
+```bash
+# 例: project スコープの記憶を global に昇格
+POST /store
+{
+  "content": "元の記憶と同じ内容",
+  "type": "decision",
+  "scope": "global",
+  "importance": 0.95,
+  "supersedes": ["旧記憶のID"]
+}
+# → 旧記憶は deprecated=true, superseded_by=新ID になる
+```
+
 ### 自動廃止フロー（`/isac-save-memory`）
 
 `/isac-save-memory` で記憶を保存する際、既存記憶との重複を自動検出し廃止を提案する：

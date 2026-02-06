@@ -2515,6 +2515,49 @@ class TestSpecialCharactersComprehensive:
         assert detail["max_length"] == 65536
 
 
+class TestUpdateImmutableFields:
+    """PATCH で変更不可フィールド（scope/scope_id/type）が無視されることを検証"""
+
+    @pytest.fixture(autouse=True)
+    def setup_memory(self):
+        """テスト用の記憶を作成"""
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": "immutable fields test",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "immutable-test"
+        })
+        assert response.status_code == 200
+        self.memory_id = response.json()["id"]
+
+    def test_patch_scope_ignored(self):
+        """PATCH で scope を送信しても変更されない"""
+        requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope": "global", "summary": "updated"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["scope"] == "project", "scope が変更されてしまった"
+
+    def test_patch_scope_id_ignored(self):
+        """PATCH で scope_id を送信しても変更されない"""
+        requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"scope_id": "other-project", "summary": "updated"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["scope_id"] == "immutable-test", "scope_id が変更されてしまった"
+
+    def test_patch_type_ignored(self):
+        """PATCH で type を送信しても変更されない"""
+        requests.patch(
+            f"{BASE_URL}/memory/{self.memory_id}",
+            json={"type": "decision", "summary": "updated"}
+        )
+        result = requests.get(f"{BASE_URL}/memory/{self.memory_id}").json()
+        assert result["type"] == "work", "type が変更されてしまった"
+
+
 class TestBoundaryValuesComprehensive:
     """境界値の網羅的テスト"""
 
