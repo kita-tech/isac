@@ -139,6 +139,8 @@ Recent decisions:
 │  │  - /isac-decide: 重要決定の記録                │  │
 │  │  - /isac-review: 設計レビュー                  │  │
 │  │  - /isac-code-review: コードレビュー           │  │
+│  │  - /isac-todo: 個人タスク管理                  │  │
+│  │  - /isac-later: タスク素早く追加               │  │
 │  └───────────────────────────────────────────────┘  │
 └──────────────────────┬──────────────────────────────┘
                        │
@@ -260,7 +262,11 @@ isac/
 │       │   └── SKILL.md
 │       ├── isac-code-review/
 │       │   └── SKILL.md
-│       └── isac-suggest/
+│       ├── isac-suggest/
+│       │   └── SKILL.md
+│       ├── isac-todo/
+│       │   └── SKILL.md
+│       └── isac-later/
 │           └── SKILL.md
 ├── memory-service/
 │   ├── docker-compose.yml
