@@ -194,6 +194,15 @@ def count_tokens(text: str) -> int:
     return len(text) // 4
 
 
+def validate_content_not_empty(content: str) -> None:
+    """コンテンツが空でないことをチェック。空の場合は HTTPException を送出。"""
+    if not content or not content.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="コンテンツは空にできません"
+        )
+
+
 def validate_content_length(content: str) -> None:
     """コンテンツの文字数制限をチェック。超過時は HTTPException を送出。"""
     if len(content) > MAX_CONTENT_LENGTH:
@@ -736,6 +745,7 @@ async def store_memory(
     user_id = current_user.user_id if current_user else None
 
     # バリデーション
+    validate_content_not_empty(entry.content)
     validate_content_length(entry.content)
     if entry.expires_at:
         validate_expires_at(entry.expires_at)
@@ -992,7 +1002,8 @@ async def search_memories(
     category: Optional[MemoryCategory] = Query(None, description="カテゴリでフィルタ"),
     tags: Optional[str] = Query(None, description="タグでフィルタ（カンマ区切り）"),
     include_deprecated: bool = Query(False, description="廃止済み記憶を含めるか"),
-    limit: int = Query(10, le=50),
+    limit: int = Query(10, le=100),
+    offset: int = Query(0, ge=0, description="結果のオフセット"),
     current_user: Optional[CurrentUser] = Depends(get_current_user)
 ):
     """記憶を検索"""
@@ -1026,7 +1037,7 @@ async def search_memories(
             params.append(category.value)
 
         sql += " ORDER BY importance DESC, created_at DESC LIMIT ?"
-        params.append(limit * 5)  # タグフィルタ用に多めに取得
+        params.append((offset + limit) * 5)  # タグフィルタ用＋offset考慮で多めに取得
 
         cursor = conn.execute(sql, params)
         all_memories = [row_to_memory(row) for row in cursor.fetchall()]
@@ -1052,10 +1063,13 @@ async def search_memories(
             matched.append((score, m))
 
     matched.sort(key=lambda x: x[0], reverse=True)
-    results = [m for _, m in matched[:limit]]
+    results = [m for _, m in matched]
 
     if not results:
-        results = all_memories[:limit]
+        results = all_memories
+
+    # offset と limit を適用
+    results = results[offset:offset + limit]
 
     return {"memories": results, "count": len(results)}
 
@@ -1109,6 +1123,7 @@ async def update_memory(
 
         # コンテンツの更新
         if update.content is not None:
+            validate_content_not_empty(update.content)
             validate_content_length(update.content)
             updates.append("content = ?")
             params.append(update.content)

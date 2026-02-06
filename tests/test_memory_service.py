@@ -2673,18 +2673,12 @@ class TestBoundaryValuesComprehensive:
         assert len(data["memories"]) <= 50
 
     def test_limit_over_max_rejected(self):
-        """limit>50は拒否または制限される"""
+        """limit>100は拒否される"""
         response = requests.get(
             f"{BASE_URL}/search",
-            params={"query": "テスト", "limit": 100}
+            params={"query": "テスト", "limit": 101}
         )
-        # 100は拒否されるか、50に制限されるべき
-        if response.status_code == 200:
-            data = response.json()
-            # 結果が50以下に制限されていることを確認
-            assert len(data["memories"]) <= 50, f"limit=100 で {len(data['memories'])} 件返されました"
-        else:
-            assert response.status_code in [400, 422], f"予期しないステータスコード: {response.status_code}"
+        assert response.status_code == 422, f"limit=101 が受け入れられました: {response.status_code}"
 
     def test_offset_zero(self):
         """offset=0 での検索ができる"""
