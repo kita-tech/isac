@@ -96,8 +96,10 @@ isac/
 ├── .claude/               # Claude Code CLI 設定
 │   ├── hooks/
 │   │   ├── on-prompt.sh        # 記憶検索
+│   │   ├── on-stop.sh          # タスク完了時のAI分類プロンプト
 │   │   ├── post-edit.sh        # 記憶保存
 │   │   ├── resolve-project.sh  # プロジェクトID解決
+│   │   ├── save-memory.sh      # AI分類結果の記憶保存
 │   │   └── sensitive-filter.sh # 機密情報フィルター
 │   └── skills/            # Skill 定義
 ├── memory-service/        # Memory Service (Docker)
@@ -189,7 +191,7 @@ ISACのスキルは必ず `isac-` プレフィックスを付けること（他�
 | `/isac-decide` | 決定の記録 |
 | `/isac-suggest` | 状況に応じたSkill提案（未完了タスクも表示） |
 | `/isac-save-memory` | AI分析による保存形式提案（記憶/Skill/Hooks） |
-| `/isac-notion-design` | Notionからの設計書生成 |
+| `/isac-notion-design` | Notionの概要から設計を実行 |
 | `/isac-todo` | 個人タスク管理（add/list/done） |
 | `/isac-later` | 「後でやる」タスクを素早く記録 |
 
@@ -432,7 +434,8 @@ GET /context/{project_id}?query=xxx&include_deprecated=true
 
 ### スコープ昇格（project → global）
 
-`PATCH /memory/{id}` では `scope` を変更できない（履歴保持のため意図的に除外）。
+`PATCH /memory/{id}` では `scope`, `scope_id`, `type` を変更できない（イミュータブルフィールド。履歴保持のため意図的に除外）。
+これらのフィールドを送信した場合、無視されてレスポンスの `warnings` フィールドで通知される。
 スコープを変更したい場合は、`supersedes` を使って新規作成し旧記憶を廃止する：
 
 ```bash

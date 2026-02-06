@@ -131,14 +131,22 @@ Recent decisions:
 │  ┌───────────────────────────────────────────────┐  │
 │  │ Hooks（~/.isac/hooks/ または .claude/hooks/）   │  │
 │  │  - on-prompt.sh: 関連記憶を自動表示            │  │
+│  │  - on-stop.sh: タスク完了時のAI分類            │  │
 │  │  - post-edit.sh: 作業履歴を自動保存            │  │
+│  │  - resolve-project.sh: プロジェクトID解決      │  │
+│  │  - save-memory.sh: AI分類結果の記憶保存        │  │
 │  │  - sensitive-filter.sh: 機密情報マスキング     │  │
 │  ├───────────────────────────────────────────────┤  │
 │  │ Skills（~/.isac/skills/ または .claude/skills/）│  │
-│  │  - /isac-memory: 記憶管理                      │  │
-│  │  - /isac-decide: 重要決定の記録                │  │
+│  │  - /isac-autopilot: 自動実装フロー             │  │
 │  │  - /isac-review: 設計レビュー                  │  │
 │  │  - /isac-code-review: コードレビュー           │  │
+│  │  - /isac-pr-review: PRレビュー                 │  │
+│  │  - /isac-memory: 記憶管理                      │  │
+│  │  - /isac-decide: 重要決定の記録                │  │
+│  │  - /isac-suggest: Skill提案                    │  │
+│  │  - /isac-save-memory: 保存形式提案             │  │
+│  │  - /isac-notion-design: Notion設計             │  │
 │  │  - /isac-todo: 個人タスク管理                  │  │
 │  │  - /isac-later: タスク素早く追加               │  │
 │  └───────────────────────────────────────────────┘  │
@@ -250,23 +258,33 @@ isac/
 │   ├── settings.yaml           # Hooks設定
 │   ├── hooks/
 │   │   ├── on-prompt.sh        # 記憶検索
+│   │   ├── on-stop.sh          # タスク完了時のAI分類プロンプト
 │   │   ├── post-edit.sh        # 記憶保存
 │   │   ├── resolve-project.sh  # プロジェクトID解決
+│   │   ├── save-memory.sh      # AI分類結果の記憶保存
 │   │   └── sensitive-filter.sh # 機密情報フィルター
 │   └── skills/                 # ディレクトリ構造
-│       ├── isac-memory/
-│       │   └── SKILL.md
-│       ├── isac-decide/
-│       │   └── SKILL.md
-│       ├── isac-review/
+│       ├── isac-autopilot/
 │       │   └── SKILL.md
 │       ├── isac-code-review/
 │       │   └── SKILL.md
+│       ├── isac-decide/
+│       │   └── SKILL.md
+│       ├── isac-later/
+│       │   └── SKILL.md
+│       ├── isac-memory/
+│       │   └── SKILL.md
+│       ├── isac-notion-design/
+│       │   └── SKILL.md
+│       ├── isac-pr-review/
+│       │   └── SKILL.md
+│       ├── isac-review/
+│       │   └── SKILL.md
+│       ├── isac-save-memory/
+│       │   └── SKILL.md
 │       ├── isac-suggest/
 │       │   └── SKILL.md
-│       ├── isac-todo/
-│       │   └── SKILL.md
-│       └── isac-later/
+│       └── isac-todo/
 │           └── SKILL.md
 ├── memory-service/
 │   ├── docker-compose.yml

@@ -89,7 +89,9 @@ Memory Serviceは、ISACシステムの中核を担う**長期記憶管理サー
 │  │  ┌─────────────────────────────────────────────────┐    │      │
 │  │  │ Hooks                                            │    │      │
 │  │  │  • on-prompt.sh   → コンテキスト取得            │    │      │
+│  │  │  • on-stop.sh     → タスク完了時のAI分類        │    │      │
 │  │  │  • post-edit.sh   → 作業履歴保存                │    │      │
+│  │  │  • save-memory.sh → AI分類結果の記憶保存        │    │      │
 │  │  └─────────────────────────────────────────────────┘    │      │
 │  └───────────────────────────┬─────────────────────────────┘      │
 │                              │ HTTP REST API                       │
@@ -184,16 +186,20 @@ CREATE TABLE memories (
     id TEXT PRIMARY KEY,              -- ユニークID（8文字）
     scope TEXT NOT NULL,              -- 'global' | 'team' | 'project'
     scope_id TEXT,                    -- チームID または プロジェクトID
-    type TEXT NOT NULL,               -- 'decision' | 'work' | 'knowledge'
+    type TEXT NOT NULL,               -- 'decision' | 'work' | 'knowledge' | 'todo'
     content TEXT NOT NULL,            -- 記憶の本文
     summary TEXT,                     -- 要約（100文字以内）
     importance REAL DEFAULT 0.5,      -- 重要度（0.0〜1.0）
     metadata TEXT,                    -- JSON形式のメタデータ
+    category TEXT,                    -- カテゴリ（v2.1.0〜）
+    tags TEXT,                        -- JSON配列形式のタグ（v2.1.0〜）
     created_by TEXT,                  -- 作成者のユーザーID
     created_at TEXT NOT NULL,         -- 作成日時（ISO 8601）
     expires_at TEXT,                  -- 有効期限
     access_count INTEGER DEFAULT 0,   -- アクセス回数
-    last_accessed_at TEXT             -- 最終アクセス日時
+    last_accessed_at TEXT,            -- 最終アクセス日時
+    deprecated BOOLEAN DEFAULT FALSE, -- 廃止フラグ（v2.1.0〜）
+    superseded_by TEXT                -- 後継の記憶ID（v2.1.0〜）
 );
 
 -- インデックス
@@ -201,6 +207,8 @@ CREATE INDEX idx_memories_scope ON memories(scope, scope_id);
 CREATE INDEX idx_memories_type ON memories(type);
 CREATE INDEX idx_memories_created ON memories(created_at);
 CREATE INDEX idx_memories_importance ON memories(importance);
+CREATE INDEX idx_memories_category ON memories(category);
+CREATE INDEX idx_memories_deprecated ON memories(deprecated);
 ```
 
 ### 記憶のライフサイクル
@@ -234,9 +242,9 @@ CREATE INDEX idx_memories_importance ON memories(importance);
 
 ## メモリタイプの決定方法
 
-### 3つのタイプ
+### 4つのタイプ
 
-Memory Serviceは記憶を**3つのタイプ**に分類します。適切なタイプを選ぶことで、検索精度と保持期間が最適化されます。
+Memory Serviceは記憶を**4つのタイプ**に分類します。適切なタイプを選ぶことで、検索精度と保持期間が最適化されます。
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -431,6 +439,7 @@ Memory Serviceは記憶を**3つのタイプ**に分類します。適切なタ�
 | test | テスト | pytest, Jest, テストファイル |
 | docs | ドキュメント | README, .mdファイル |
 | architecture | アーキテクチャ設計 | 設計, パターン, アーキテクチャ |
+| github | GitHub運用 | Issue, PR, ラベル |
 | other | その他 | 上記に該当しない |
 
 #### カテゴリ・タグの付け方
@@ -768,8 +777,9 @@ Claudeが今回の作業を分析して出力:
 | GET | /context/{project_id} | コンテキスト取得 | オプション |
 | GET | /search | 記憶を検索 | オプション |
 | GET | /memory/{id} | 特定の記憶を取得 | オプション |
-| PATCH | /memory/{id} | 記憶のタグ・カテゴリを編集 | オプション |
+| PATCH | /memory/{id} | 記憶のコンテンツ・タグ・カテゴリ・重要度を更新 | オプション |
 | DELETE | /memory/{id} | 記憶を削除 | 必要 |
+| PATCH | /memory/{id}/deprecate | 記憶を廃止/復元 | オプション |
 | GET | /categories | カテゴリ一覧 | 不要 |
 | GET | /tags/{scope_id} | 使用中タグ一覧 | オプション |
 | GET | /my/todos | 個人TODO一覧 | オプション |
@@ -779,8 +789,13 @@ Claudeが今回の作業を分析して出力:
 | GET | /export/{project_id} | エクスポート | オプション |
 | POST | /import | インポート | オプション |
 | POST | /cleanup | 期限切れ削除 | オプション |
+| POST | /projects/{project_id}/members | プロジェクトメンバー追加 | オプション |
+| GET | /projects/{project_id}/members | プロジェクトメンバー一覧 | オプション |
 | POST | /admin/teams | チーム作成 | 管理者 |
+| GET | /admin/teams | チーム一覧 | 管理者 |
 | POST | /admin/users | ユーザー作成 | 管理者 |
+| GET | /admin/users | ユーザー一覧 | 管理者 |
+| POST | /admin/users/{user_id}/regenerate-key | APIキー再生成 | 管理者 |
 | GET | /admin/audit-logs | 監査ログ | 管理者 |
 
 ### 主要API詳細
@@ -791,7 +806,7 @@ Claudeが今回の作業を分析して出力:
 ```json
 {
   "content": "記憶の内容（必須）",
-  "type": "decision",      // decision | work | knowledge
+  "type": "decision",      // decision | work | knowledge | todo
   "scope": "project",      // global | team | project
   "scope_id": "my-project", // team または project の場合に必要
   "importance": 0.8,       // 0.0〜1.0（デフォルト: 0.5）
@@ -808,9 +823,12 @@ Claudeが今回の作業を分析して出力:
   "id": "abc12345",
   "tokens": 50,
   "scope": "project",
+  "scope_id": "my-project",
   "category": "backend",
   "tags": ["jwt", "auth"],
-  "message": "Memory stored (project/decision)"
+  "message": "Memory stored (project/decision)",
+  "superseded_ids": [],
+  "skipped_supersedes": []
 }
 ```
 
@@ -840,7 +858,8 @@ Claudeが今回の作業を分析して出力:
 - `type` (オプション): タイプでフィルタ
 - `category` (オプション): カテゴリでフィルタ
 - `tags` (オプション): タグでフィルタ（カンマ区切りで複数指定可）
-- `limit` (オプション): 最大件数（デフォルト: 10、最大: 50）
+- `limit` (オプション): 最大件数（デフォルト: 10、最大: 100）
+- `offset` (オプション): 結果のオフセット（デフォルト: 0）
 
 **レスポンス**:
 ```json
@@ -850,17 +869,19 @@ Claudeが今回の作業を分析して出力:
 }
 ```
 
-#### PATCH /memory/{id} - 記憶を編集
+#### PATCH /memory/{id} - 記憶を更新
 
 **リクエスト**:
 ```json
 {
+  "content": "新しいコンテンツ",     // 新しいコンテンツ（任意）
   "category": "backend",           // 新しいカテゴリ（任意）
   "tags": ["python", "api"],       // タグを完全に置き換え（任意）
   "add_tags": ["new-tag"],         // 既存タグに追加（任意）
   "remove_tags": ["old-tag"],      // タグを削除（任意）
   "importance": 0.8,               // 新しい重要度（任意）
-  "summary": "新しい要約"           // 新しい要約（任意）
+  "summary": "新しい要約",          // 新しい要約（任意）
+  "metadata": {"status": "done"}   // メタデータの更新（既存とマージ、任意）
 }
 ```
 
@@ -868,6 +889,8 @@ Claudeが今回の作業を分析して出力:
 - `tags`と`add_tags`/`remove_tags`は同時に指定しないでください
 - `tags`を指定すると既存のタグは完全に置き換わります
 - 最大タグ数は10個です
+- **`scope`, `scope_id`, `type` は変更不可**（イミュータブルフィールド）。これらを送信した場合、無視されて `warnings` フィールドで通知されます
+- スコープ変更が必要な場合は `POST /store` の `supersedes` を使って新規作成し旧記憶を廃止してください
 
 **レスポンス**:
 ```json
@@ -877,6 +900,18 @@ Claudeが今回の作業を分析して出力:
   "category": "backend",
   "tags": ["python", "api", "new-tag"],
   "importance": 0.8
+}
+```
+
+**イミュータブルフィールド送信時のレスポンス例**:
+```json
+{
+  "id": "abc12345",
+  "message": "Memory updated",
+  "category": "backend",
+  "tags": ["python", "api"],
+  "importance": 0.8,
+  "warnings": ["scope, scope_id, type は変更できません（送信されたフィールドは無視されました）"]
 }
 ```
 
@@ -1128,7 +1163,7 @@ curl http://localhost:8100/health
 {
   "status": "healthy",
   "service": "isac-memory",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "auth_required": false
 }
 ```
