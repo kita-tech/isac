@@ -328,6 +328,7 @@ gh pr create --title "Add [hook-name] hook" --body "..."
 4. **Claude Code CLI ファースト**: CLI の機能を最大限活用
 5. **セキュリティ**: 機密情報は自動フィルタリング
 6. **CLAUDE.mdを必ずコンテキストに含める**: ルール、規約、決定事項が集約されている
+7. **懐疑的レビュアー必須**: ペルソナを使うスキル（`/isac-review`, `/isac-code-review`, `/isac-pr-review`, `/isac-autopilot`）では、ペルソナ数に関わらず最低1人は懐疑的レビュアーを含めること
 
 ## 開発フロー（必須）
 
