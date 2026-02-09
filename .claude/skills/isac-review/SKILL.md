@@ -183,6 +183,8 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 | `/isac-review --full` | 5人 | 重要なアーキテクチャ決定 |
 | `/isac-review --team` | 10人 | 大きな技術選定 |
 
+**必須ルール**: ペルソナ数に関わらず、**最低1人は懐疑的レビュアーを含めること**。`--quick`（2人）の場合でも、1人は専門家、1人は懐疑的レビュアーとする。
+
 ## 関連スキル
 
 - `/isac-memory` - 記憶の検索・管理
