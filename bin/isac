@@ -172,19 +172,19 @@ cmd_install() {
     # Skills コピー（ディレクトリ構造）
     echo -e "${GREEN}[3/5] Installing skills...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/skills"
-    mkdir -p "${HOME}/.claude/skills"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
         # 既存のスキルを削除して再コピー
         rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
         cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
         echo -e "  Copied skills to ${ISAC_GLOBAL_DIR}/skills/"
-
-        # ~/.claude/skills/ にもコピー（Claude Code CLI が読み込むグローバルスキル）
-        rm -rf "${HOME}/.claude/skills/"isac-*
-        cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${HOME}/.claude/skills/" 2>/dev/null || true
-        echo -e "  Copied skills to ~/.claude/skills/"
     else
         echo -e "${YELLOW}  Warning: Source skills not found${NC}"
+    fi
+
+    # 旧バージョンの ~/.claude/skills/ コピーをクリーンアップ
+    if ls "${HOME}/.claude/skills/"isac-* >/dev/null 2>&1; then
+        rm -rf "${HOME}/.claude/skills/"isac-*
+        echo -e "  Cleaned up old skills from ~/.claude/skills/"
     fi
 
     # Agents コピー（SubAgent定義）
@@ -280,12 +280,12 @@ cmd_update() {
         rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
         cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
         echo -e "  Updated skills in ~/.isac/skills/"
+    fi
 
-        # ~/.claude/skills/ にもコピー（Claude Code CLI が読み込むグローバルスキル）
-        mkdir -p "${HOME}/.claude/skills"
+    # 旧バージョンの ~/.claude/skills/ コピーをクリーンアップ
+    if ls "${HOME}/.claude/skills/"isac-* >/dev/null 2>&1; then
         rm -rf "${HOME}/.claude/skills/"isac-*
-        cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${HOME}/.claude/skills/" 2>/dev/null || true
-        echo -e "  Updated skills in ~/.claude/skills/"
+        echo -e "  Cleaned up old skills from ~/.claude/skills/"
     fi
 
     # Agents 更新
@@ -781,21 +781,28 @@ setup_claude_directory() {
         echo -e "  ${YELLOW}⚠${NC} Global skills not found (~/.isac/skills/)"
         echo "     Run 'isac install' first to set up global configuration."
     else
-        # 既存のリンク/ファイルを削除して新しいリンクを作成
-        rm -rf .claude/skills/*
+        # Git管理されたスキルファイルがある場合はシンボリックリンク作成をスキップ
+        if git ls-files --error-unmatch .claude/skills/ >/dev/null 2>&1; then
+            local skill_count
+            skill_count=$(ls -1d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+            echo -e "  ${GREEN}✓${NC} Skills: ${skill_count} Git-managed skills (skipped symlink)"
+        else
+            # 既存のリンク/ファイルを削除して新しいリンクを作成
+            rm -rf .claude/skills/*
 
-        # 各Skillディレクトリへのシンボリックリンクを作成
-        for skill_dir in "${ISAC_GLOBAL_DIR}/skills/"*/; do
-            if [ -d "${skill_dir}" ]; then
-                local dirname
-                dirname=$(basename "${skill_dir}")
-                ln -sf "${skill_dir}" ".claude/skills/${dirname}"
-            fi
-        done
+            # 各Skillディレクトリへのシンボリックリンクを作成
+            for skill_dir in "${ISAC_GLOBAL_DIR}/skills/"*/; do
+                if [ -d "${skill_dir}" ]; then
+                    local dirname
+                    dirname=$(basename "${skill_dir}")
+                    ln -sf "${skill_dir}" ".claude/skills/${dirname}"
+                fi
+            done
 
-        local skill_count
-        skill_count=$(ls -1d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
-        echo -e "  ${GREEN}✓${NC} Linked ${skill_count} skills from ~/.isac/skills/"
+            local skill_count
+            skill_count=$(ls -1d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+            echo -e "  ${GREEN}✓${NC} Linked ${skill_count} skills from ~/.isac/skills/"
+        fi
     fi
 
     # Agentsシンボリックリンク
