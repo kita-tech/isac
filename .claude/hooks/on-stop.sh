@@ -74,6 +74,11 @@ cat << 'PROMPT_EOF'
 - work: 実装作業、バグ修正、リファクタリングなど日常的な作業
 - knowledge: 学習した知見、ベストプラクティス、チームで共有すべき情報
 
+■ PRレビュー作業の分類ルール:
+- /isac-pr-review や /isac-code-review の実施記録 → type: work
+- レビュー結果のスコアや個別の指摘事項 → 保存不要（"skip": true）。PRコメントに残っているため記憶として保存しない
+- レビュー中に決まったチーム方針・コーディングルール → type: decision（/isac-decide で別途記録を推奨）
+
 ■ category（カテゴリ）:
 - backend: サーバーサイド、API実装、データ処理
 - frontend: UI/UX、クライアントサイド、Webアプリ
