@@ -85,11 +85,15 @@ else
 fi
 
 # 4. 環境変数の案内
-echo -e "${GREEN}[4/4] Environment variables...${NC}"
+echo -e "${GREEN}[4/4] Project configuration...${NC}"
 echo ""
-echo -e "${BLUE}Add these to your shell profile (~/.bashrc or ~/.zshrc):${NC}"
+echo -e "${BLUE}project_id は .isac.yaml で管理されます。${NC}"
+echo -e "${BLUE}isac init を実行すると自動的に設定されます。${NC}"
 echo ""
-echo "  export CLAUDE_PROJECT=\"$(basename "$TARGET_DIR")\""
+echo -e "${YELLOW}確認方法:${NC}"
+echo "  grep project_id: .isac.yaml"
+echo ""
+echo -e "${YELLOW}Memory Service URL (必要に応じてシェルプロファイルに追加):${NC}"
 echo "  export MEMORY_SERVICE_URL=\"http://localhost:8100\""
 echo ""
 

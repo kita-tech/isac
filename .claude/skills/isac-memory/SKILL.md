@@ -7,6 +7,16 @@ description: プロジェクトの長期記憶を管理します。
 
 プロジェクトの長期記憶を管理します。
 
+## project_id の取得ルール
+
+**重要**: project_id は必ず `.isac.yaml` ファイルから取得すること。`$CLAUDE_PROJECT` 環境変数は `.isac.yaml` が存在しない場合のフォールバックとしてのみ使用する。
+
+```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+```
+
+以下のすべての curl コマンドで、この方法で取得した `$PROJECT_ID` を使用すること。
+
 ## スコープ
 
 記憶には3つのスコープがあります：
@@ -22,10 +32,12 @@ description: プロジェクトの長期記憶を管理します。
 関連する記憶を検索:
 
 ```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
 curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/search" \
   --data-urlencode "query=認証" \
   --data-urlencode "scope=project" \
-  --data-urlencode "scope_id=${CLAUDE_PROJECT:-default}"
+  --data-urlencode "scope_id=$PROJECT_ID"
 ```
 
 ## 記憶の保存
@@ -33,6 +45,8 @@ curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/search" \
 作業内容を記録:
 
 ```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
 curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
   -H "Content-Type: application/json" \
   -d '{
@@ -40,7 +54,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
     "type": "work",
     "importance": 0.5,
     "scope": "project",
-    "scope_id": "'"${CLAUDE_PROJECT:-default}"'"
+    "scope_id": "'"$PROJECT_ID"'"
   }'
 ```
 
@@ -57,7 +71,9 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 現在のクエリに関連するコンテキストを取得:
 
 ```bash
-curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/context/${CLAUDE_PROJECT:-default}" \
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
+curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/context/$PROJECT_ID" \
   --data-urlencode "query=認証の実装"
 ```
 
@@ -66,7 +82,9 @@ curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/context/${CLAUDE_PROJEC
 プロジェクトの記憶統計:
 
 ```bash
-curl "${MEMORY_SERVICE_URL:-http://localhost:8100}/stats/${CLAUDE_PROJECT:-default}"
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
+curl "${MEMORY_SERVICE_URL:-http://localhost:8100}/stats/$PROJECT_ID"
 ```
 
 ## エクスポート
@@ -74,7 +92,9 @@ curl "${MEMORY_SERVICE_URL:-http://localhost:8100}/stats/${CLAUDE_PROJECT:-defau
 記憶をバックアップ:
 
 ```bash
-curl "${MEMORY_SERVICE_URL:-http://localhost:8100}/export/${CLAUDE_PROJECT:-default}" > memory_backup.json
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
+curl "${MEMORY_SERVICE_URL:-http://localhost:8100}/export/$PROJECT_ID" > memory_backup.json
 ```
 
 ## 関連スキル

@@ -7,6 +7,16 @@ description: 設計や技術選定を複数のペルソナで検討し、決定�
 
 設計や技術選定を複数のペルソナで検討し、決定を記録します。
 
+## project_id の取得ルール
+
+**重要**: project_id は必ず `.isac.yaml` ファイルから取得すること。`$CLAUDE_PROJECT` 環境変数は `.isac.yaml` が存在しない場合のフォールバックとしてのみ使用する。
+
+```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+```
+
+決定の記録時に Memory Service へ保存する際は、この方法で取得した `$PROJECT_ID` を使用すること。
+
 ## 使い方
 
 ```
@@ -30,7 +40,7 @@ description: 設計や技術選定を複数のペルソナで検討し、決定�
 各ペルソナは以下の形式で意見を述べます：
 
 ```
-**👨‍💻 [名前]（[役割]）**
+**[名前]（[役割]）**
 > [意見・主張]
 >
 > **懸念点**: [あれば]
@@ -42,14 +52,14 @@ description: 設計や技術選定を複数のペルソナで検討し、決定�
 議論後、以下の形式で投票を集計：
 
 ```
-## 📊 投票結果
+## 投票結果
 
 | 選択肢 | 票数 | 支持者 |
 |--------|------|--------|
 | A案 | X | 名前, 名前 |
 | B案 | Y | 名前 |
 
-## 🎯 結論
+## 結論
 
 [合意内容の要約]
 ```
@@ -63,6 +73,8 @@ description: 設計や技術選定を複数のペルソナで検討し、決定�
 **Yes の場合**、以下の形式で Memory Service に保存：
 
 ```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
 curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
   -H "Content-Type: application/json" \
   -d '{
@@ -70,7 +82,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
     "type": "decision",
     "importance": [0.6-0.9],
     "scope": "project",
-    "scope_id": "[現在のプロジェクトID]",
+    "scope_id": "'"$PROJECT_ID"'",
     "metadata": {
       "category": "[カテゴリ]",
       "review_type": "persona_review",
@@ -98,13 +110,13 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 ### 出力例
 
 ```
-## 🎭 3人のペルソナによる議論
+## 3人のペルソナによる議論
 
 ### 議題: 認証方式の選定（JWT vs セッション）
 
 ---
 
-**👨‍💻 田中（バックエンド開発者・5年目）**
+**田中（バックエンド開発者・5年目）**
 > JWT推奨。ステートレスで実装がシンプル。
 > トークンの検証だけで認証完了するのでDBアクセス不要。
 >
@@ -113,7 +125,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 
 ---
 
-**👩‍🔧 高橋（SRE・6年目）**
+**高橋（SRE・6年目）**
 > 運用観点からもJWT。セッションストアの管理が不要。
 > ただしトークンサイズに注意。
 >
@@ -122,7 +134,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 
 ---
 
-**👩‍🚀 加藤（アーキテクト・12年目）**
+**加藤（アーキテクト・12年目）**
 > マイクロサービス展開を考えるとJWT一択。
 > サービス間認証にも使える。
 >
@@ -131,14 +143,14 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 
 ---
 
-## 📊 投票結果
+## 投票結果
 
 | 選択肢 | 票数 | 支持者 |
 |--------|------|--------|
 | JWT | 3 | 田中, 高橋, 加藤 |
 | セッション | 0 | - |
 
-## 🎯 結論
+## 結論
 
 **JWTを採用**
 - 短い有効期限（15分）+ リフレッシュトークン（7日）の構成
