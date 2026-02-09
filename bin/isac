@@ -538,6 +538,41 @@ load_secrets() {
     done < "${secrets_file}"
 }
 
+# MCP サーバーを個別に登録するヘルパー
+# 引数: name env_var force [claude mcp add のオプション...]
+register_mcp_server() {
+    local name="$1"
+    local env_var="$2"
+    local force="$3"
+    shift 3
+    local env_val="${!env_var:-}"
+
+    if [ "${force}" = true ]; then
+        if [ -n "${env_val}" ]; then
+            claude mcp remove "${name}" >/dev/null 2>&1 || true
+            if claude mcp add --scope user "$@" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}✓${NC} ${name}: re-registered"
+            else
+                echo -e "  ${YELLOW}⚠${NC} ${name}: re-registration failed"
+            fi
+        else
+            echo -e "  ${YELLOW}⚠${NC} ${env_var} not set, skipping ${name}"
+        fi
+    elif ! claude mcp get "${name}" >/dev/null 2>&1; then
+        if [ -n "${env_val}" ]; then
+            if claude mcp add --scope user "$@" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}✓${NC} ${name}: registered"
+            else
+                echo -e "  ${YELLOW}⚠${NC} ${name}: registration failed"
+            fi
+        else
+            echo -e "  ${YELLOW}⚠${NC} ${env_var} not set, skipping ${name}"
+        fi
+    else
+        echo -e "  ${GREEN}✓${NC} ${name}: already registered"
+    fi
+}
+
 # MCP サーバーを claude mcp add で登録
 setup_mcp_servers() {
     local force="${1:-false}"
@@ -558,54 +593,15 @@ setup_mcp_servers() {
     fi
 
     # notion
-    if [ "${force}" = true ]; then
-        if [ -n "${NOTION_API_TOKEN:-}" ]; then
-            claude mcp remove notion >/dev/null 2>&1 || true
-            claude mcp add --scope user \
-                -e 'OPENAPI_MCP_HEADERS={"Authorization": "Bearer '"${NOTION_API_TOKEN}"'", "Notion-Version": "2022-06-28"}' \
-                notion -- npx -y @notionhq/notion-mcp-server >/dev/null 2>&1
-            echo -e "  ${GREEN}✓${NC} notion: re-registered"
-        else
-            echo -e "  ${YELLOW}⚠${NC} NOTION_API_TOKEN not set, skipping notion"
-        fi
-    elif ! claude mcp get notion >/dev/null 2>&1; then
-        if [ -n "${NOTION_API_TOKEN:-}" ]; then
-            claude mcp add --scope user \
-                -e 'OPENAPI_MCP_HEADERS={"Authorization": "Bearer '"${NOTION_API_TOKEN}"'", "Notion-Version": "2022-06-28"}' \
-                notion -- npx -y @notionhq/notion-mcp-server >/dev/null 2>&1
-            echo -e "  ${GREEN}✓${NC} notion: registered"
-        else
-            echo -e "  ${YELLOW}⚠${NC} NOTION_API_TOKEN not set, skipping notion"
-        fi
-    else
-        echo -e "  ${GREEN}✓${NC} notion: already registered"
-    fi
+    register_mcp_server "notion" "NOTION_API_TOKEN" "${force}" \
+        -e 'OPENAPI_MCP_HEADERS={"Authorization": "Bearer '"${NOTION_API_TOKEN}"'", "Notion-Version": "2022-06-28"}' \
+        notion -- npx -y @notionhq/notion-mcp-server
 
     # context7
-    if [ "${force}" = true ]; then
-        if [ -n "${CONTEXT7_API_KEY:-}" ]; then
-            claude mcp remove context7 >/dev/null 2>&1 || true
-            claude mcp add --scope user \
-                -e "DEFAULT_MINIMUM_TOKENS=10000" \
-                -e "CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" \
-                context7 -- npx -y @upstash/context7-mcp >/dev/null 2>&1
-            echo -e "  ${GREEN}✓${NC} context7: re-registered"
-        else
-            echo -e "  ${YELLOW}⚠${NC} CONTEXT7_API_KEY not set, skipping context7"
-        fi
-    elif ! claude mcp get context7 >/dev/null 2>&1; then
-        if [ -n "${CONTEXT7_API_KEY:-}" ]; then
-            claude mcp add --scope user \
-                -e "DEFAULT_MINIMUM_TOKENS=10000" \
-                -e "CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" \
-                context7 -- npx -y @upstash/context7-mcp >/dev/null 2>&1
-            echo -e "  ${GREEN}✓${NC} context7: registered"
-        else
-            echo -e "  ${YELLOW}⚠${NC} CONTEXT7_API_KEY not set, skipping context7"
-        fi
-    else
-        echo -e "  ${GREEN}✓${NC} context7: already registered"
-    fi
+    register_mcp_server "context7" "CONTEXT7_API_KEY" "${force}" \
+        -e "DEFAULT_MINIMUM_TOKENS=10000" \
+        -e "CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" \
+        context7 -- npx -y @upstash/context7-mcp
 }
 
 # settings.yaml を新規作成

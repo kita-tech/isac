@@ -31,6 +31,7 @@ RUN_API=true
 RUN_HOOKS=true
 RUN_INTEGRATION=true
 RUN_TODO=true
+RUN_CLI=true
 RUN_COVERAGE=false
 
 for arg in "$@"; do
@@ -39,21 +40,31 @@ for arg in "$@"; do
             RUN_HOOKS=false
             RUN_INTEGRATION=false
             RUN_TODO=false
+            RUN_CLI=false
             ;;
         --hooks-only)
             RUN_API=false
             RUN_INTEGRATION=false
             RUN_TODO=false
+            RUN_CLI=false
             ;;
         --integration)
             RUN_API=false
             RUN_HOOKS=false
             RUN_TODO=false
+            RUN_CLI=false
             ;;
         --todo-only)
             RUN_API=false
             RUN_HOOKS=false
             RUN_INTEGRATION=false
+            RUN_CLI=false
+            ;;
+        --cli-only)
+            RUN_API=false
+            RUN_HOOKS=false
+            RUN_INTEGRATION=false
+            RUN_TODO=false
             ;;
         --quick)
             RUN_API=false
@@ -69,7 +80,8 @@ for arg in "$@"; do
             echo "  --hooks-only    Hookテストのみ実行"
             echo "  --integration   統合テストのみ実行"
             echo "  --todo-only     Todoテストのみ実行"
-            echo "  --quick         Hookテストと統合テストとTodoテストのみ (pytest不要)"
+            echo "  --cli-only      CLIテストのみ実行"
+            echo "  --quick         Hookテストと統合テストとTodoテストとCLIテストのみ (pytest不要)"
             echo "  --coverage      カバレッジ計測を有効化 (HTMLレポート生成)"
             echo ""
             exit 0
@@ -239,7 +251,7 @@ fi
 # ========================================
 # CLIテスト
 # ========================================
-if [ "$RUN_HOOKS" = true ]; then
+if [ "$RUN_CLI" = true ]; then
     echo "========================================"
     echo -e "${BLUE}5. CLIテスト${NC}"
     echo "========================================"
