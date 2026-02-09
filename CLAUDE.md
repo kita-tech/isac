@@ -56,6 +56,20 @@ claude mcp list              # 登録済み MCP サーバー一覧
 claude mcp remove <name>     # MCP サーバーを削除
 ```
 
+#### プロジェクトごとの API キー管理（`.isac.secrets.yaml`）
+
+プロジェクトルートに `.isac.secrets.yaml` を配置すると、`isac init` / `isac switch` 時にMCPサーバーのAPIキーが自動で切り替わる。
+
+```bash
+cp .isac.secrets.yaml.example .isac.secrets.yaml
+chmod 600 .isac.secrets.yaml
+```
+
+**形式**: `KEY: VALUE` のフラットYAMLのみ（ネスト不可）
+**優先順位**: `.isac.secrets.yaml` > 環境変数
+**許可キー**: `NOTION_API_TOKEN`, `CONTEXT7_API_KEY`（その他は無視・警告）
+**注意**: `.gitignore` 対象。パーミッションは `600` にすること。
+
 ### Claude Code CLI のインストール方法
 
 **ネイティブインストール（推奨）** を使用すること：
@@ -106,6 +120,11 @@ isac/
 ├── templates/             # プロジェクトテンプレート
 ├── tests/                 # テストスイート
 └── scripts/               # セットアップスクリプト
+
+# プロジェクトルート（isac init で生成）
+.isac.yaml                 # プロジェクト設定
+.isac.secrets.yaml.example # シークレット設定テンプレート
+.isac.secrets.yaml         # シークレット設定（.gitignore対象）
 
 ~/.isac/                   # グローバル設定（isac install で作成）
 ├── config.yaml
@@ -392,6 +411,9 @@ open htmlcov/index.html
 - RDBMSを使用している限り、複数人が同時に記憶を追加しても技術的な同期問題は発生しない（SQLiteのACID特性で保証）
 - チーム開発での課題は「意味的な競合」や「重複データ」であり、アプリケーションレベルの問題
 - MCP サーバーは `settings.yaml` ではなく `claude mcp add --scope user` で `~/.claude.json` に登録する（Claude Code CLI が `settings.yaml` の `mcpServers` を読み込まないため）
+- MCP APIキーはプロジェクトごとに `.isac.secrets.yaml` で管理する（`.isac.secrets.yaml` > 環境変数の優先順位）
+- `.isac.secrets.yaml` は `KEY: VALUE` フラットYAMLのみサポート（ネスト非対応）
+- 許可キーをホワイトリストで制限（`NOTION_API_TOKEN`, `CONTEXT7_API_KEY`のみ。環境変数インジェクション防止）
 
 ## 記憶の廃止機能
 

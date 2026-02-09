@@ -579,6 +579,408 @@ fi
 echo ""
 
 # ========================================
+# テスト14: secrets ファイル基本動作
+# ========================================
+echo -e "${BLUE}テスト14: secrets ファイル基本動作${NC}"
+echo "----------------------------------------"
+
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+
+# 14-1. init で .isac.secrets.yaml.example が生成される
+OUTPUT=$("$ISAC_CMD" init "secrets-test" --yes 2>&1)
+if [ -f ".isac.secrets.yaml.example" ]; then
+    test_pass "init で .isac.secrets.yaml.example が生成される"
+else
+    test_fail ".isac.secrets.yaml.example の生成" "ファイルが存在しない"
+fi
+
+# 14-2. .gitignore に .isac.secrets.yaml が追記される
+if [ -f ".gitignore" ] && grep -q '\.isac\.secrets\.yaml' ".gitignore"; then
+    test_pass ".gitignore に .isac.secrets.yaml が追記される"
+else
+    # .gitignore が存在しない場合は追記されない（正常動作）
+    if [ ! -f ".gitignore" ]; then
+        test_pass ".gitignore が存在しない場合はスキップされる（正常動作）"
+    else
+        test_fail ".gitignore への追記" ".isac.secrets.yaml が見つからない"
+    fi
+fi
+
+# 14-3. secrets ファイルなしで init が正常動作（フォールバック確認）
+rm -f .isac.secrets.yaml
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init "no-secrets-test" --yes 2>&1)
+if [ $? -eq 0 ]; then
+    test_pass "secrets ファイルなしで init が正常動作する"
+else
+    test_fail "secrets ファイルなしのフォールバック" "Exit code: $?"
+fi
+
+# 14-4. ホワイトリスト外のキーで警告が出る
+cat > ".isac.secrets.yaml" << 'EOF'
+PATH: /malicious/path
+NOTION_API_TOKEN: test-token
+EOF
+chmod 600 ".isac.secrets.yaml"
+# load_secrets は setup_mcp_servers 内から呼ばれるが、直接テストするため source
+OUTPUT=$(bash -c "
+    source '$ISAC_CMD' 2>/dev/null
+    load_secrets 2>&1
+" 2>&1 || true)
+# bin/isac は set -e + case で main を実行するので直接 source は難しい
+# 代わりに init --force で間接テスト
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init "whitelist-test" --yes --force 2>&1)
+if echo "$OUTPUT" | grep -q "Unknown key.*PATH.*ignored"; then
+    test_pass "ホワイトリスト外のキー（PATH）で警告が出る"
+else
+    test_fail "ホワイトリスト外キーの警告" "警告メッセージが見つからない"
+fi
+
+# 14-5. パーミッション 644 で警告が出る
+cat > ".isac.secrets.yaml" << 'EOF'
+NOTION_API_TOKEN: test-token
+EOF
+chmod 644 ".isac.secrets.yaml"
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init "perm-test" --yes --force 2>&1)
+if echo "$OUTPUT" | grep -q "permissions 644, expected 600"; then
+    test_pass "パーミッション 644 で警告が出る"
+else
+    test_fail "パーミッション警告" "警告メッセージが見つからない"
+fi
+
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
+# テスト15: secrets パース境界値
+# ========================================
+echo -e "${BLUE}テスト15: secrets パース境界値${NC}"
+echo "----------------------------------------"
+
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+
+# bin/isac から load_secrets 関数を抽出してテストで使用する（コピー排除）
+_LOAD_SECRETS_FUNC_FILE=$(mktemp)
+grep '^ALLOWED_SECRET_KEYS=' "$ISAC_CMD" > "$_LOAD_SECRETS_FUNC_FILE"
+echo "" >> "$_LOAD_SECRETS_FUNC_FILE"
+sed -n '/^load_secrets() {$/,/^}$/p' "$ISAC_CMD" >> "$_LOAD_SECRETS_FUNC_FILE"
+
+# 抽出結果のガードチェック: 抽出失敗時にサイレントにテストがパスするのを防止
+if ! grep -q 'load_secrets()' "$_LOAD_SECRETS_FUNC_FILE"; then
+    echo -e "${RED}FATAL: bin/isac から load_secrets 関数の抽出に失敗しました${NC}"
+    echo "  sed パターンが bin/isac の関数定義と一致しません"
+    exit 1
+fi
+if ! grep -q 'ALLOWED_SECRET_KEYS=' "$_LOAD_SECRETS_FUNC_FILE"; then
+    echo -e "${RED}FATAL: bin/isac から ALLOWED_SECRET_KEYS の抽出に失敗しました${NC}"
+    exit 1
+fi
+test_pass "bin/isac から load_secrets 関数の抽出に成功"
+
+test_load_secrets() {
+    local secrets_content="$1"
+    local no_trailing_newline="${2:-false}"
+    local test_dir
+    test_dir=$(mktemp -d)
+    if [ "$no_trailing_newline" = "true" ]; then
+        printf "%s" "$secrets_content" > "$test_dir/.isac.secrets.yaml"
+    else
+        printf "%s\n" "$secrets_content" > "$test_dir/.isac.secrets.yaml"
+    fi
+    chmod 600 "$test_dir/.isac.secrets.yaml"
+
+    bash -c "
+        YELLOW=''
+        NC=''
+        cd '$test_dir'
+        source '$_LOAD_SECRETS_FUNC_FILE'
+        load_secrets 2>/dev/null
+        echo \"NOTION_API_TOKEN=\${NOTION_API_TOKEN:-}\"
+        echo \"CONTEXT7_API_KEY=\${CONTEXT7_API_KEY:-}\"
+    " 2>/dev/null
+    rm -rf "$test_dir"
+}
+
+# 15-1. 値にスペースを含む場合
+OUTPUT=$(test_load_secrets "NOTION_API_TOKEN: my token with spaces")
+if echo "$OUTPUT" | grep -q "NOTION_API_TOKEN=my token with spaces"; then
+    test_pass "値にスペースを含むシークレットが正しくパースされる"
+else
+    test_fail "スペース含む値のパース" "Output: $OUTPUT"
+fi
+
+# 15-2. 値にコロンを含む場合（URL等）
+OUTPUT=$(test_load_secrets "NOTION_API_TOKEN: https://example.com:8080/path")
+if echo "$OUTPUT" | grep -q "NOTION_API_TOKEN=https://example.com:8080/path"; then
+    test_pass "値にコロンを含むシークレットが正しくパースされる"
+else
+    test_fail "コロン含む値のパース" "Output: $OUTPUT"
+fi
+
+# 15-3. 空ファイル
+OUTPUT=$(test_load_secrets "")
+if echo "$OUTPUT" | grep -q "NOTION_API_TOKEN=$"; then
+    test_pass "空ファイルで値が設定されない"
+else
+    test_fail "空ファイルのパース" "Output: $OUTPUT"
+fi
+
+# 15-4. コメントのみのファイル
+OUTPUT=$(test_load_secrets "# This is a comment
+# Another comment")
+if echo "$OUTPUT" | grep -q "NOTION_API_TOKEN=$"; then
+    test_pass "コメントのみのファイルで値が設定されない"
+else
+    test_fail "コメントのみファイルのパース" "Output: $OUTPUT"
+fi
+
+# 15-5. クォートされた値（ダブル/シングル）
+OUTPUT=$(test_load_secrets 'NOTION_API_TOKEN: "quoted-token"')
+if echo "$OUTPUT" | grep -q "NOTION_API_TOKEN=quoted-token"; then
+    test_pass "ダブルクォートされた値が正しくパースされる"
+else
+    test_fail "ダブルクォート値のパース" "Output: $OUTPUT"
+fi
+
+OUTPUT=$(test_load_secrets "NOTION_API_TOKEN: 'single-quoted'")
+if echo "$OUTPUT" | grep -q "NOTION_API_TOKEN=single-quoted"; then
+    test_pass "シングルクォートされた値が正しくパースされる"
+else
+    test_fail "シングルクォート値のパース" "Output: $OUTPUT"
+fi
+
+# 15-6. 末尾改行なしのファイル（test_load_secrets の第2引数で末尾改行なしを指定）
+OUTPUT=$(test_load_secrets "NOTION_API_TOKEN: no-newline-token" true)
+if echo "$OUTPUT" | grep -q "NOTION_API_TOKEN=no-newline-token"; then
+    test_pass "末尾改行なしのファイルが正しくパースされる"
+else
+    test_fail "末尾改行なしのパース" "Output: $OUTPUT"
+fi
+
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
+# テスト16: switch での MCP 再登録
+# ========================================
+echo -e "${BLUE}テスト16: switch での MCP 再登録${NC}"
+echo "----------------------------------------"
+
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+
+# 16-1. .isac.secrets.yaml がある場合にMCP更新メッセージ表示
+cat > ".isac.secrets.yaml" << 'EOF'
+NOTION_API_TOKEN: test-token-for-switch
+EOF
+chmod 600 ".isac.secrets.yaml"
+OUTPUT=$("$ISAC_CMD" switch "mcp-test-project" --yes 2>&1)
+if echo "$OUTPUT" | grep -q "Setting up MCP servers"; then
+    test_pass ".isac.secrets.yaml がある場合にMCP更新が実行される"
+else
+    test_fail "switch MCP更新" "Setting up MCP servers が見つからない"
+fi
+
+# 16-2. .isac.secrets.yaml がない場合にMCP更新スキップ
+rm -f .isac.secrets.yaml .isac.yaml
+OUTPUT=$("$ISAC_CMD" switch "no-mcp-test-project" --yes 2>&1)
+if ! echo "$OUTPUT" | grep -q "Setting up MCP servers"; then
+    test_pass ".isac.secrets.yaml がない場合にMCP更新がスキップされる"
+else
+    test_fail "switch MCP更新スキップ" "Setting up MCP servers が出力された"
+fi
+
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
+# テスト17: 環境変数インジェクション防止
+# ========================================
+echo -e "${BLUE}テスト17: 環境変数インジェクション防止${NC}"
+echo "----------------------------------------"
+
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+
+# 17-1. LD_PRELOAD インジェクション防止
+cat > ".isac.secrets.yaml" << 'EOF'
+LD_PRELOAD: /tmp/malicious.so
+NOTION_API_TOKEN: safe-token
+EOF
+chmod 600 ".isac.secrets.yaml"
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init "inject-test1" --yes --force 2>&1)
+if echo "$OUTPUT" | grep -q "Unknown key.*LD_PRELOAD.*ignored"; then
+    test_pass "LD_PRELOAD インジェクションが防止される"
+else
+    test_fail "LD_PRELOAD インジェクション防止" "警告メッセージが見つからない"
+fi
+
+# 17-2. SHELL インジェクション防止
+cat > ".isac.secrets.yaml" << 'EOF'
+SHELL: /bin/evil
+EOF
+chmod 600 ".isac.secrets.yaml"
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init "inject-test2" --yes --force 2>&1)
+if echo "$OUTPUT" | grep -q "Unknown key.*SHELL.*ignored"; then
+    test_pass "SHELL インジェクションが防止される"
+else
+    test_fail "SHELL インジェクション防止" "警告メッセージが見つからない"
+fi
+
+# 17-3. $() コマンドインジェクション防止（値にコマンドが含まれても実行されない）
+# test_load_secrets で直接値を検証: リテラル保持されていれば安全
+OUTPUT=$(test_load_secrets 'NOTION_API_TOKEN: $(echo ISAC_INJECTION_TEST_MARKER)')
+# インジェクションが防止されていれば、値は "$(echo ISAC_INJECTION_TEST_MARKER)" のリテラル文字列
+# インジェクションが発生していれば、値は "ISAC_INJECTION_TEST_MARKER" になる
+if echo "$OUTPUT" | grep -qF 'NOTION_API_TOKEN=$(echo ISAC_INJECTION_TEST_MARKER)'; then
+    test_pass "\$() コマンドインジェクションが防止される（値がリテラル保持）"
+else
+    test_fail "\$() コマンドインジェクション防止" "Output: $OUTPUT"
+fi
+
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
+# テスト18: register_mcp_server の失敗ハンドリング
+# ========================================
+echo -e "${BLUE}テスト18: register_mcp_server の失敗ハンドリング${NC}"
+echo "----------------------------------------"
+
+# bin/isac から register_mcp_server 関数を抽出
+_REGISTER_MCP_FUNC_FILE=$(mktemp)
+sed -n '/^register_mcp_server() {$/,/^}$/p' "$ISAC_CMD" >> "$_REGISTER_MCP_FUNC_FILE"
+
+# 18-1. claude mcp add が失敗した場合に "registration failed" が出力される
+# claude コマンドのモックを作成（mcp get は失敗、mcp add も失敗を返す）
+MOCK_DIR=$(mktemp -d)
+cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+#!/bin/bash
+if [ "$1" = "mcp" ] && [ "$2" = "get" ]; then
+    exit 1
+fi
+if [ "$1" = "mcp" ] && [ "$2" = "add" ]; then
+    exit 1
+fi
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/claude"
+
+OUTPUT=$(bash -c "
+    export PATH='$MOCK_DIR:\$PATH'
+    GREEN='' YELLOW='' NC=''
+    export NOTION_API_TOKEN='test-token'
+    source '$_REGISTER_MCP_FUNC_FILE'
+    register_mcp_server 'notion' 'NOTION_API_TOKEN' false \
+        -e 'OPENAPI_MCP_HEADERS=test' notion -- echo dummy
+" 2>&1)
+if echo "$OUTPUT" | grep -q "registration failed"; then
+    test_pass "claude mcp add 失敗時に registration failed が出力される"
+else
+    test_fail "registration failed メッセージ" "Output: $OUTPUT"
+fi
+
+# 18-2. force=true で claude mcp add が失敗した場合に "re-registration failed" が出力される
+OUTPUT=$(bash -c "
+    export PATH='$MOCK_DIR:\$PATH'
+    GREEN='' YELLOW='' NC=''
+    export NOTION_API_TOKEN='test-token'
+    source '$_REGISTER_MCP_FUNC_FILE'
+    register_mcp_server 'notion' 'NOTION_API_TOKEN' true \
+        -e 'OPENAPI_MCP_HEADERS=test' notion -- echo dummy
+" 2>&1)
+if echo "$OUTPUT" | grep -q "re-registration failed"; then
+    test_pass "force=true で claude mcp add 失敗時に re-registration failed が出力される"
+else
+    test_fail "re-registration failed メッセージ" "Output: $OUTPUT"
+fi
+
+# 18-3. claude mcp add が成功した場合に "registered" が出力される
+cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+#!/bin/bash
+if [ "$1" = "mcp" ] && [ "$2" = "get" ]; then
+    exit 1
+fi
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/claude"
+
+OUTPUT=$(bash -c "
+    export PATH='$MOCK_DIR:\$PATH'
+    GREEN='' YELLOW='' NC=''
+    export NOTION_API_TOKEN='test-token'
+    source '$_REGISTER_MCP_FUNC_FILE'
+    register_mcp_server 'notion' 'NOTION_API_TOKEN' false \
+        -e 'OPENAPI_MCP_HEADERS=test' notion -- echo dummy
+" 2>&1)
+if echo "$OUTPUT" | grep -q "notion: registered"; then
+    test_pass "claude mcp add 成功時に registered が出力される"
+else
+    test_fail "registered メッセージ" "Output: $OUTPUT"
+fi
+
+# 18-4. 環境変数未設定で "not set, skipping" が出力される
+OUTPUT=$(bash -c "
+    export PATH='$MOCK_DIR:\$PATH'
+    GREEN='' YELLOW='' NC=''
+    unset NOTION_API_TOKEN
+    source '$_REGISTER_MCP_FUNC_FILE'
+    register_mcp_server 'notion' 'NOTION_API_TOKEN' false \
+        -e 'OPENAPI_MCP_HEADERS=test' notion -- echo dummy
+" 2>&1)
+if echo "$OUTPUT" | grep -q "NOTION_API_TOKEN not set, skipping"; then
+    test_pass "環境変数未設定で skipping が出力される"
+else
+    test_fail "skipping メッセージ" "Output: $OUTPUT"
+fi
+
+# 18-5. already registered の場合のテスト
+cat > "$MOCK_DIR/claude" << 'MOCK_EOF'
+#!/bin/bash
+# mcp get は成功（登録済み）
+exit 0
+MOCK_EOF
+chmod +x "$MOCK_DIR/claude"
+
+OUTPUT=$(bash -c "
+    export PATH='$MOCK_DIR:\$PATH'
+    GREEN='' YELLOW='' NC=''
+    export NOTION_API_TOKEN='test-token'
+    source '$_REGISTER_MCP_FUNC_FILE'
+    register_mcp_server 'notion' 'NOTION_API_TOKEN' false \
+        -e 'OPENAPI_MCP_HEADERS=test' notion -- echo dummy
+" 2>&1)
+if echo "$OUTPUT" | grep -q "already registered"; then
+    test_pass "登録済みの場合に already registered が出力される"
+else
+    test_fail "already registered メッセージ" "Output: $OUTPUT"
+fi
+
+rm -rf "$MOCK_DIR"
+rm -f "$_REGISTER_MCP_FUNC_FILE"
+
+echo ""
+
+# ========================================
+# クリーンアップ
+# ========================================
+rm -f "$_LOAD_SECRETS_FUNC_FILE" 2>/dev/null
+
+# ========================================
 # 結果サマリー
 # ========================================
 echo "========================================"

@@ -382,6 +382,41 @@ EOF
     echo -e "${GREEN}✓ Created .isac.yaml${NC}"
 
     # ========================================
+    # .isac.secrets.yaml.example の生成
+    # ========================================
+    if [ ! -f ".isac.secrets.yaml.example" ] || [ "${flag_force}" = true ]; then
+        cat > ".isac.secrets.yaml.example" << 'SECRETS_EOF'
+# ISAC Secrets Configuration
+# コピーして .isac.secrets.yaml を作成:
+#   cp .isac.secrets.yaml.example .isac.secrets.yaml
+#   chmod 600 .isac.secrets.yaml
+#
+# KEY: VALUE のフラット形式のみサポート
+# 許可キー: NOTION_API_TOKEN, CONTEXT7_API_KEY
+# 優先順位: .isac.secrets.yaml > 環境変数
+
+# Notion API Token (https://www.notion.so/my-integrations)
+# NOTION_API_TOKEN: YOUR_NOTION_API_TOKEN_HERE
+
+# Context7 API Key (https://context7.com/dashboard)
+# CONTEXT7_API_KEY: YOUR_CONTEXT7_API_KEY_HERE
+SECRETS_EOF
+        echo -e "${GREEN}✓ Created .isac.secrets.yaml.example${NC}"
+    fi
+
+    # ========================================
+    # .gitignore に .isac.secrets.yaml を追記
+    # ========================================
+    if [ -f ".gitignore" ]; then
+        if ! grep -q '\.isac\.secrets\.yaml$' ".gitignore"; then
+            echo "" >> ".gitignore"
+            echo "# ISAC secrets (DO NOT commit)" >> ".gitignore"
+            echo ".isac.secrets.yaml" >> ".gitignore"
+            echo -e "${GREEN}✓ Added .isac.secrets.yaml to .gitignore${NC}"
+        fi
+    fi
+
+    # ========================================
     # .claude/ ディレクトリの自動作成
     # ========================================
     local create_claude_dir=false
@@ -436,9 +471,106 @@ EOF
         echo "  Start with: cd ${ISAC_SOURCE_DIR}/memory-service && docker compose up -d"
     fi
 
+    # secrets ファイルの案内
+    if [ ! -f ".isac.secrets.yaml" ]; then
+        echo ""
+        echo -e "${YELLOW}MCP secrets:${NC}"
+        echo "  cp .isac.secrets.yaml.example .isac.secrets.yaml"
+        echo "  chmod 600 .isac.secrets.yaml"
+        echo "  Then edit with your API keys."
+    fi
+
     echo ""
     echo -e "${GREEN}✅ Project initialized!${NC}"
     echo "Run 'claude' to start developing with ISAC."
+}
+
+# 許可するシークレットキーのホワイトリスト
+ALLOWED_SECRET_KEYS="NOTION_API_TOKEN CONTEXT7_API_KEY"
+
+# .isac.secrets.yaml からシークレットを読み込み、環境変数として export する
+load_secrets() {
+    local secrets_file=".isac.secrets.yaml"
+    if [ ! -f "${secrets_file}" ]; then
+        return 0
+    fi
+
+    # パーミッションチェック（警告のみ）
+    local file_perm
+    file_perm=$(stat -f "%Lp" "${secrets_file}" 2>/dev/null || stat -c "%a" "${secrets_file}" 2>/dev/null || echo "unknown")
+    if [ "${file_perm}" != "600" ] && [ "${file_perm}" != "unknown" ]; then
+        echo -e "  ${YELLOW}⚠${NC} ${secrets_file} has permissions ${file_perm}, expected 600" >&2
+        echo -e "    Run: chmod 600 ${secrets_file}" >&2
+    fi
+
+    local line key value
+    while IFS= read -r line || [ -n "${line}" ]; do
+        # コメント行・空行スキップ
+        case "${line}" in
+            '#'*|'') continue ;;
+        esac
+        # 空白のみの行もスキップ
+        [[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+
+        # KEY: VALUE を分離（最初のコロンで分割）
+        key="${line%%:*}"
+        [ "${key}" = "${line}" ] && continue  # コロンなし → スキップ
+        value="${line#*:}"
+
+        # 前後空白除去
+        key=$(echo "${key}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        value=$(echo "${value}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        # クォート除去
+        value=$(echo "${value}" | sed "s/^['\"]//;s/['\"]$//")
+
+        # ホワイトリストチェック
+        local allowed=false
+        for allowed_key in ${ALLOWED_SECRET_KEYS}; do
+            [ "${key}" = "${allowed_key}" ] && allowed=true && break
+        done
+        if [ "${allowed}" = false ]; then
+            echo -e "  ${YELLOW}⚠${NC} Unknown key '${key}' in ${secrets_file} (ignored)" >&2
+            continue
+        fi
+
+        # 空でなければ export
+        [ -n "${value}" ] && export "${key}=${value}"
+    done < "${secrets_file}"
+}
+
+# MCP サーバーを個別に登録するヘルパー
+# 引数: name env_var force [claude mcp add のオプション...]
+register_mcp_server() {
+    local name="$1"
+    local env_var="$2"
+    local force="$3"
+    shift 3
+    local env_val="${!env_var:-}"
+
+    if [ "${force}" = true ]; then
+        if [ -n "${env_val}" ]; then
+            claude mcp remove "${name}" >/dev/null 2>&1 || true
+            if claude mcp add --scope user "$@" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}✓${NC} ${name}: re-registered"
+            else
+                echo -e "  ${YELLOW}⚠${NC} ${name}: re-registration failed"
+            fi
+        else
+            echo -e "  ${YELLOW}⚠${NC} ${env_var} not set, skipping ${name}"
+        fi
+    elif ! claude mcp get "${name}" >/dev/null 2>&1; then
+        if [ -n "${env_val}" ]; then
+            if claude mcp add --scope user "$@" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}✓${NC} ${name}: registered"
+            else
+                echo -e "  ${YELLOW}⚠${NC} ${name}: registration failed"
+            fi
+        else
+            echo -e "  ${YELLOW}⚠${NC} ${env_var} not set, skipping ${name}"
+        fi
+    else
+        echo -e "  ${GREEN}✓${NC} ${name}: already registered"
+    fi
 }
 
 # MCP サーバーを claude mcp add で登録
@@ -447,6 +579,9 @@ setup_mcp_servers() {
 
     echo ""
     echo -e "${GREEN}Setting up MCP servers...${NC}"
+
+    # .isac.secrets.yaml からシークレットをロード（環境変数を上書き）
+    load_secrets
 
     if ! command -v claude &>/dev/null; then
         echo -e "  ${YELLOW}⚠${NC} claude CLI not found, skipping MCP registration"
@@ -458,33 +593,15 @@ setup_mcp_servers() {
     fi
 
     # notion
-    if [ "${force}" = true ] || ! claude mcp get notion >/dev/null 2>&1; then
-        if [ -n "${NOTION_API_TOKEN:-}" ]; then
-            claude mcp add --scope user \
-                -e 'OPENAPI_MCP_HEADERS={"Authorization": "Bearer '"${NOTION_API_TOKEN}"'", "Notion-Version": "2022-06-28"}' \
-                notion -- npx -y @notionhq/notion-mcp-server >/dev/null 2>&1
-            echo -e "  ${GREEN}✓${NC} notion: registered"
-        else
-            echo -e "  ${YELLOW}⚠${NC} NOTION_API_TOKEN not set, skipping notion"
-        fi
-    else
-        echo -e "  ${GREEN}✓${NC} notion: already registered"
-    fi
+    register_mcp_server "notion" "NOTION_API_TOKEN" "${force}" \
+        -e 'OPENAPI_MCP_HEADERS={"Authorization": "Bearer '"${NOTION_API_TOKEN}"'", "Notion-Version": "2022-06-28"}' \
+        notion -- npx -y @notionhq/notion-mcp-server
 
     # context7
-    if [ "${force}" = true ] || ! claude mcp get context7 >/dev/null 2>&1; then
-        if [ -n "${CONTEXT7_API_KEY:-}" ]; then
-            claude mcp add --scope user \
-                -e "DEFAULT_MINIMUM_TOKENS=10000" \
-                -e "CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" \
-                context7 -- npx -y @upstash/context7-mcp >/dev/null 2>&1
-            echo -e "  ${GREEN}✓${NC} context7: registered"
-        else
-            echo -e "  ${YELLOW}⚠${NC} CONTEXT7_API_KEY not set, skipping context7"
-        fi
-    else
-        echo -e "  ${GREEN}✓${NC} context7: already registered"
-    fi
+    register_mcp_server "context7" "CONTEXT7_API_KEY" "${force}" \
+        -e "DEFAULT_MINIMUM_TOKENS=10000" \
+        -e "CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" \
+        context7 -- npx -y @upstash/context7-mcp
 }
 
 # settings.yaml を新規作成
@@ -962,6 +1079,11 @@ project_id: ${project_id}
 EOF
 
     echo -e "${GREEN}Switched to: ${CYAN}${project_id}${NC}"
+
+    # .isac.secrets.yaml があれば MCP サーバーを再登録
+    if [ -f ".isac.secrets.yaml" ]; then
+        setup_mcp_servers true
+    fi
 
     # 直近の決定事項を表示
     if curl -s --connect-timeout 2 "${memory_url}/health" > /dev/null 2>&1; then
