@@ -1133,6 +1133,504 @@ cd "$SCRIPT_DIR"
 echo ""
 
 # ========================================
+# テスト20: ペルソナ機能
+# ========================================
+echo -e "${BLUE}テスト20: ペルソナ機能${NC}"
+echo "----------------------------------------"
+
+# ペルソナテンプレートが存在することを確認
+if [ -d "$SCRIPT_DIR/templates/personas" ] && [ -f "$SCRIPT_DIR/templates/personas/default.md" ] && [ -f "$SCRIPT_DIR/templates/personas/king-bonbi.md" ]; then
+    test_pass "ペルソナテンプレートファイルが存在する"
+else
+    test_fail "ペルソナテンプレートファイル" "templates/personas/ にファイルが存在しない"
+fi
+
+# ペルソナを ~/.isac/personas/ にインストール
+mkdir -p "$HOME/.isac/personas"
+cp -f "$SCRIPT_DIR/templates/personas/"*.md "$HOME/.isac/personas/" 2>/dev/null || true
+
+# 20-1. persona list が実行できる
+OUTPUT=$("$ISAC_CMD" persona list 2>&1)
+if [ $? -eq 0 ]; then
+    test_pass "isac persona list が正常終了する"
+else
+    test_fail "isac persona list の実行" "Exit code: $?"
+fi
+
+# 20-2. persona list に default が含まれる
+if echo "$OUTPUT" | grep -q "default"; then
+    test_pass "persona list に default が含まれる"
+else
+    test_fail "persona list の内容" "default が見つからない"
+fi
+
+# 20-3. persona list に king-bonbi が含まれる
+if echo "$OUTPUT" | grep -q "king-bonbi"; then
+    test_pass "persona list に king-bonbi が含まれる"
+else
+    test_fail "persona list の内容" "king-bonbi が見つからない"
+fi
+
+# 20-4. persona show がデフォルトを表示する
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: persona-test
+YAML_EOF
+OUTPUT=$("$ISAC_CMD" persona show 2>&1)
+if echo "$OUTPUT" | grep -q "default"; then
+    test_pass "persona show がデフォルト (default) を表示する"
+else
+    test_fail "persona show のデフォルト表示" "Output: $OUTPUT"
+fi
+
+# 20-5. persona set が .isac.yaml を更新する
+OUTPUT=$("$ISAC_CMD" persona set king-bonbi 2>&1)
+if [ $? -eq 0 ] && grep -q "persona: king-bonbi" ".isac.yaml"; then
+    test_pass "persona set が .isac.yaml の persona フィールドを更新する"
+else
+    test_fail "persona set の動作" "Output: $OUTPUT"
+fi
+
+# 20-6. persona show が更新されたペルソナを表示する
+OUTPUT=$("$ISAC_CMD" persona show 2>&1)
+if echo "$OUTPUT" | grep -q "king-bonbi"; then
+    test_pass "persona show が king-bonbi を表示する"
+else
+    test_fail "persona show の更新後表示" "Output: $OUTPUT"
+fi
+
+# 20-7. persona set default に戻す
+OUTPUT=$("$ISAC_CMD" persona set default 2>&1)
+if [ $? -eq 0 ] && grep -q "persona: default" ".isac.yaml"; then
+    test_pass "persona set default でデフォルトに戻せる"
+else
+    test_fail "persona set default" "Output: $OUTPUT"
+fi
+
+# 20-8. 存在しないペルソナでエラー
+OUTPUT=$("$ISAC_CMD" persona set nonexistent 2>&1)
+if [ $? -ne 0 ] && echo "$OUTPUT" | grep -q "not found"; then
+    test_pass "存在しないペルソナでエラーが返る"
+else
+    test_fail "存在しないペルソナのエラー" "Output: $OUTPUT"
+fi
+
+# 20-9. パストラバーサルを含むペルソナ名でエラー
+OUTPUT=$("$ISAC_CMD" persona set "../etc/passwd" 2>&1)
+if [ $? -ne 0 ]; then
+    test_pass "パストラバーサルを含むペルソナ名でエラーが返る"
+else
+    test_fail "パストラバーサル防止" "エラーが返らなかった"
+fi
+
+# 20-10. スラッシュを含むペルソナ名でエラー
+OUTPUT=$("$ISAC_CMD" persona set "path/traversal" 2>&1)
+if [ $? -ne 0 ]; then
+    test_pass "スラッシュを含むペルソナ名でエラーが返る"
+else
+    test_fail "スラッシュ防止" "エラーが返らなかった"
+fi
+
+# 20-11. 空のペルソナ名でエラー
+OUTPUT=$("$ISAC_CMD" persona set "" 2>&1)
+if [ $? -ne 0 ]; then
+    test_pass "空のペルソナ名でエラーが返る"
+else
+    test_fail "空ペルソナ名のバリデーション" "エラーが返らなかった"
+fi
+
+# 20-12. persona サブコマンドなしでエラー
+OUTPUT=$("$ISAC_CMD" persona 2>&1)
+if [ $? -ne 0 ] && echo "$OUTPUT" | grep -q "Subcommand required"; then
+    test_pass "persona サブコマンドなしでエラーが返る"
+else
+    test_fail "persona サブコマンドなしのエラー" "Output: $OUTPUT"
+fi
+
+# 20-13. 不明な persona サブコマンドでエラー
+OUTPUT=$("$ISAC_CMD" persona unknown 2>&1)
+if [ $? -ne 0 ] && echo "$OUTPUT" | grep -q "Unknown persona subcommand"; then
+    test_pass "不明な persona サブコマンドでエラーが返る"
+else
+    test_fail "不明なサブコマンドのエラー" "Output: $OUTPUT"
+fi
+
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
+# テスト21: ペルソナ注入（CLAUDE.md マーカー）
+# ========================================
+echo -e "${BLUE}テスト21: ペルソナ注入（CLAUDE.md マーカー）${NC}"
+echo "----------------------------------------"
+
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+
+# テスト用 CLAUDE.md を作成（マーカー付き）
+cat > "CLAUDE.md" << 'CLAUDEMD_EOF'
+# Test Project
+
+## 概要
+
+テスト用プロジェクト
+
+<!-- ISAC:PERSONA:BEGIN -->
+## ペルソナ
+
+デフォルトのペルソナ内容
+<!-- ISAC:PERSONA:END -->
+
+## 技術スタック
+
+- Python
+CLAUDEMD_EOF
+
+# 21-1. init でペルソナが注入される
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: inject-test
+persona: king-bonbi
+YAML_EOF
+OUTPUT=$("$ISAC_CMD" init "inject-test" --yes --force 2>&1)
+if grep -q "キングボンビー\|King Bonbi\|オレさま" "CLAUDE.md" 2>/dev/null; then
+    test_pass "init でキングボンビーペルソナが CLAUDE.md に注入される"
+else
+    test_fail "init でのペルソナ注入" "キングボンビーの内容が見つからない"
+fi
+
+# 21-2. マーカーが保持されている
+if grep -q '<!-- ISAC:PERSONA:BEGIN -->' "CLAUDE.md" && grep -q '<!-- ISAC:PERSONA:END -->' "CLAUDE.md"; then
+    test_pass "ペルソナ注入後もマーカーが保持されている"
+else
+    test_fail "マーカーの保持" "BEGIN/END マーカーが見つからない"
+fi
+
+# 21-3. マーカー外のコンテンツが保持されている
+if grep -q "# Test Project" "CLAUDE.md" && grep -q "## 技術スタック" "CLAUDE.md" && grep -q "Python" "CLAUDE.md"; then
+    test_pass "マーカー外のコンテンツが保持されている"
+else
+    test_fail "マーカー外コンテンツの保持" "元のコンテンツが失われている"
+fi
+
+# 21-4. persona set で CLAUDE.md が更新される
+"$ISAC_CMD" persona set default 2>&1 > /dev/null
+if ! grep -q "オレさま" "CLAUDE.md" 2>/dev/null; then
+    test_pass "persona set default で キングボンビー内容が除去される"
+else
+    test_fail "persona set default の注入" "キングボンビーの内容がまだ残っている"
+fi
+
+# 21-5. マーカーがない CLAUDE.md では注入をスキップ
+cat > "CLAUDE.md" << 'CLAUDEMD_EOF'
+# No markers project
+No persona markers here.
+CLAUDEMD_EOF
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: no-marker-test
+persona: king-bonbi
+YAML_EOF
+"$ISAC_CMD" persona set king-bonbi 2>&1 > /dev/null
+if ! grep -q "オレさま" "CLAUDE.md" 2>/dev/null; then
+    test_pass "マーカーがない CLAUDE.md では注入がスキップされる"
+else
+    test_fail "マーカーなし時のスキップ" "注入が発生してしまった"
+fi
+
+# 21-6. switch でペルソナが保持・注入される
+cat > "CLAUDE.md" << 'CLAUDEMD_EOF'
+# Switch Test
+<!-- ISAC:PERSONA:BEGIN -->
+old content
+<!-- ISAC:PERSONA:END -->
+CLAUDEMD_EOF
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: switch-persona-test
+persona: king-bonbi
+YAML_EOF
+OUTPUT=$("$ISAC_CMD" switch "new-project-id" --yes 2>&1)
+if grep -q "persona: king-bonbi" ".isac.yaml" 2>/dev/null; then
+    test_pass "switch でペルソナフィールドが保持される"
+else
+    test_fail "switch でのペルソナ保持" "persona フィールドが失われた"
+fi
+
+# switch 後に CLAUDE.md が更新されている
+if grep -q "オレさま" "CLAUDE.md" 2>/dev/null; then
+    test_pass "switch 後に CLAUDE.md にペルソナが注入される"
+else
+    test_fail "switch 後のペルソナ注入" "ペルソナ内容が見つからない"
+fi
+
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
+# テスト22: ペルソナ優先順位
+# ========================================
+echo -e "${BLUE}テスト22: ペルソナ優先順位${NC}"
+echo "----------------------------------------"
+
+# bin/isac から get_current_persona を抽出してテスト
+_PERSONA_FUNC_FILE=$(mktemp)
+sed -n '/^get_current_persona() {$/,/^}$/p' "$ISAC_CMD" >> "$_PERSONA_FUNC_FILE"
+
+# 抽出確認
+if grep -q 'get_current_persona()' "$_PERSONA_FUNC_FILE"; then
+    test_pass "bin/isac から get_current_persona 関数の抽出に成功"
+else
+    test_fail "get_current_persona 関数の抽出" "関数が見つからない"
+fi
+
+# 22-1. .isac.yaml に persona がある場合はそれが優先
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: priority-test
+persona: king-bonbi
+YAML_EOF
+OUTPUT=$(bash -c "
+    ISAC_GLOBAL_DIR='$HOME/.isac'
+    source '$_PERSONA_FUNC_FILE'
+    get_current_persona
+" 2>/dev/null)
+if [ "$OUTPUT" = "king-bonbi" ]; then
+    test_pass ".isac.yaml の persona が最優先される"
+else
+    test_fail ".isac.yaml の優先順位" "Expected: king-bonbi, Got: $OUTPUT"
+fi
+
+# 22-2. .isac.yaml に persona がない場合は config.yaml の default_persona
+rm -f ".isac.yaml"
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: priority-test
+YAML_EOF
+# config.yaml にデフォルトペルソナを一時的に設定
+ORIG_CONFIG=""
+if [ -f "$HOME/.isac/config.yaml" ]; then
+    ORIG_CONFIG=$(cat "$HOME/.isac/config.yaml")
+fi
+echo "default_persona: king-bonbi" >> "$HOME/.isac/config.yaml"
+
+OUTPUT=$(bash -c "
+    ISAC_GLOBAL_DIR='$HOME/.isac'
+    source '$_PERSONA_FUNC_FILE'
+    get_current_persona
+" 2>/dev/null)
+if [ "$OUTPUT" = "king-bonbi" ]; then
+    test_pass "config.yaml の default_persona がフォールバック先になる"
+else
+    test_fail "config.yaml の default_persona" "Expected: king-bonbi, Got: $OUTPUT"
+fi
+
+# config.yaml を復元
+if [ -n "$ORIG_CONFIG" ]; then
+    echo "$ORIG_CONFIG" > "$HOME/.isac/config.yaml"
+else
+    rm -f "$HOME/.isac/config.yaml"
+fi
+
+# 22-3. どちらもない場合は default
+rm -f ".isac.yaml"
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: priority-test
+YAML_EOF
+OUTPUT=$(bash -c "
+    ISAC_GLOBAL_DIR='$HOME/.isac'
+    source '$_PERSONA_FUNC_FILE'
+    get_current_persona
+" 2>/dev/null)
+if [ "$OUTPUT" = "default" ]; then
+    test_pass "ペルソナ未指定時は default になる"
+else
+    test_fail "デフォルトペルソナ" "Expected: default, Got: $OUTPUT"
+fi
+
+rm -f "$_PERSONA_FUNC_FILE"
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
+# テスト23: ペルソナ名バリデーション
+# ========================================
+echo -e "${BLUE}テスト23: ペルソナ名バリデーション${NC}"
+echo "----------------------------------------"
+
+# bin/isac から validate_persona_name を抽出
+_VALIDATE_PERSONA_FUNC_FILE=$(mktemp)
+# カラー定数を追加
+echo "RED=''" >> "$_VALIDATE_PERSONA_FUNC_FILE"
+echo "NC=''" >> "$_VALIDATE_PERSONA_FUNC_FILE"
+sed -n '/^validate_persona_name() {$/,/^}$/p' "$ISAC_CMD" >> "$_VALIDATE_PERSONA_FUNC_FILE"
+
+if grep -q 'validate_persona_name()' "$_VALIDATE_PERSONA_FUNC_FILE"; then
+    test_pass "bin/isac から validate_persona_name 関数の抽出に成功"
+else
+    test_fail "validate_persona_name 関数の抽出" "関数が見つからない"
+fi
+
+# 23-1. 有効なペルソナ名
+OUTPUT=$(bash -c "
+    source '$_VALIDATE_PERSONA_FUNC_FILE'
+    validate_persona_name 'king-bonbi' 2>&1
+    echo \"EXIT=\$?\"
+")
+if echo "$OUTPUT" | grep -q "EXIT=0"; then
+    test_pass "有効なペルソナ名 (king-bonbi) が受け入れられる"
+else
+    test_fail "有効なペルソナ名" "Output: $OUTPUT"
+fi
+
+# 23-2. アンダースコア付きペルソナ名
+OUTPUT=$(bash -c "
+    source '$_VALIDATE_PERSONA_FUNC_FILE'
+    validate_persona_name 'my_persona' 2>&1
+    echo \"EXIT=\$?\"
+")
+if echo "$OUTPUT" | grep -q "EXIT=0"; then
+    test_pass "アンダースコア付きペルソナ名 (my_persona) が受け入れられる"
+else
+    test_fail "アンダースコア付きペルソナ名" "Output: $OUTPUT"
+fi
+
+# 23-3. スラッシュを含む名前はエラー
+OUTPUT=$(bash -c "
+    source '$_VALIDATE_PERSONA_FUNC_FILE'
+    validate_persona_name 'path/traversal' 2>&1
+    echo \"EXIT=\$?\"
+")
+if echo "$OUTPUT" | grep -q "EXIT=1"; then
+    test_pass "スラッシュを含むペルソナ名がエラーになる"
+else
+    test_fail "スラッシュ検出" "Output: $OUTPUT"
+fi
+
+# 23-4. .. を含む名前はエラー
+OUTPUT=$(bash -c "
+    source '$_VALIDATE_PERSONA_FUNC_FILE'
+    validate_persona_name '..evil' 2>&1
+    echo \"EXIT=\$?\"
+")
+if echo "$OUTPUT" | grep -q "EXIT=1"; then
+    test_pass ".. を含むペルソナ名がエラーになる"
+else
+    test_fail ".. 検出" "Output: $OUTPUT"
+fi
+
+# 23-5. 空の名前はエラー
+OUTPUT=$(bash -c "
+    source '$_VALIDATE_PERSONA_FUNC_FILE'
+    validate_persona_name '' 2>&1
+    echo \"EXIT=\$?\"
+")
+if echo "$OUTPUT" | grep -q "EXIT=1"; then
+    test_pass "空のペルソナ名がエラーになる"
+else
+    test_fail "空名のバリデーション" "Output: $OUTPUT"
+fi
+
+# 23-6. スペースを含む名前はエラー
+OUTPUT=$(bash -c "
+    source '$_VALIDATE_PERSONA_FUNC_FILE'
+    validate_persona_name 'my persona' 2>&1
+    echo \"EXIT=\$?\"
+")
+if echo "$OUTPUT" | grep -q "EXIT=1"; then
+    test_pass "スペースを含むペルソナ名がエラーになる"
+else
+    test_fail "スペース検出" "Output: $OUTPUT"
+fi
+
+# 23-7. 日本語を含む名前はエラー
+OUTPUT=$(bash -c "
+    source '$_VALIDATE_PERSONA_FUNC_FILE'
+    validate_persona_name 'ペルソナ' 2>&1
+    echo \"EXIT=\$?\"
+")
+if echo "$OUTPUT" | grep -q "EXIT=1"; then
+    test_pass "日本語を含むペルソナ名がエラーになる"
+else
+    test_fail "日本語検出" "Output: $OUTPUT"
+fi
+
+rm -f "$_VALIDATE_PERSONA_FUNC_FILE"
+
+echo ""
+
+# ========================================
+# テスト24: isac status にペルソナ表示
+# ========================================
+echo -e "${BLUE}テスト24: isac status にペルソナ表示${NC}"
+echo "----------------------------------------"
+
+cd "$SCRIPT_DIR"
+STATUS_OUTPUT=$("$ISAC_CMD" status 2>&1)
+
+# 24-1. status にペルソナ情報が表示される
+if echo "$STATUS_OUTPUT" | grep -q "Persona:"; then
+    test_pass "status にペルソナ情報が表示される"
+else
+    test_fail "status のペルソナ表示" "Persona: が見つからない"
+fi
+
+echo ""
+
+# ========================================
+# テスト25: isac install でペルソナがコピーされる
+# ========================================
+echo -e "${BLUE}テスト25: isac install でペルソナがコピーされる${NC}"
+echo "----------------------------------------"
+
+# インストール実行
+OUTPUT=$("$ISAC_CMD" install 2>&1)
+
+# 25-1. install 出力にペルソナが含まれる
+if echo "$OUTPUT" | grep -q "Installing personas"; then
+    test_pass "install 出力にペルソナインストールが含まれる"
+else
+    test_fail "install のペルソナ出力" "Installing personas が見つからない"
+fi
+
+# 25-2. ~/.isac/personas/ にファイルがコピーされる
+if [ -f "$HOME/.isac/personas/default.md" ] && [ -f "$HOME/.isac/personas/king-bonbi.md" ]; then
+    test_pass "install で ~/.isac/personas/ にペルソナがコピーされる"
+else
+    test_fail "ペルソナファイルのコピー" "~/.isac/personas/ にファイルが存在しない"
+fi
+
+echo ""
+
+# ========================================
+# テスト26: isac help にペルソナコマンドが含まれる
+# ========================================
+echo -e "${BLUE}テスト26: isac help にペルソナコマンドが含まれる${NC}"
+echo "----------------------------------------"
+
+HELP_OUTPUT=$("$ISAC_CMD" help 2>&1)
+
+# 26-1. help にペルソナコマンドが表示される
+if echo "$HELP_OUTPUT" | grep -q "persona"; then
+    test_pass "help にペルソナコマンドが表示される"
+else
+    test_fail "help のペルソナ表示" "persona が見つからない"
+fi
+
+# 26-2. Persona Commands セクションが表示される
+if echo "$HELP_OUTPUT" | grep -q "Persona Commands:"; then
+    test_pass "Persona Commands セクションが表示される"
+else
+    test_fail "Persona Commands セクション" "Persona Commands: が見つからない"
+fi
+
+echo ""
+
+# ========================================
 # クリーンアップ
 # ========================================
 rm -f "$_LOAD_SECRETS_FUNC_FILE" 2>/dev/null

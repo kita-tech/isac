@@ -9,3 +9,7 @@ project_id: my-project
 
 # チームID（オプション - チームナレッジ共有用）
 # team_id: my-team
+
+# ペルソナ（オプション - ISACの応答キャラクターを設定）
+# 利用可能なペルソナ: isac persona list で確認
+# persona: king-bonbi

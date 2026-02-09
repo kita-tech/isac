@@ -48,6 +48,11 @@ show_help() {
     echo -e "${YELLOW}Environment Variables:${NC}"
     echo "  ISAC_NO_CACHE=1   キャッシュを常に無効化（開発時に便利）"
     echo ""
+    echo -e "${YELLOW}Persona Commands:${NC}"
+    echo "  persona list      利用可能なペルソナ一覧"
+    echo "  persona set <n>   ペルソナを設定（.isac.yaml を更新）"
+    echo "  persona show      現在のペルソナを表示"
+    echo ""
     echo -e "${YELLOW}Examples:${NC}"
     echo "  isac install              # 初回セットアップ"
     echo "  isac init                 # プロジェクト初期化（対話式）"
@@ -58,6 +63,8 @@ show_help() {
     echo "  isac status --no-cache    # 最新情報を取得"
     echo "  isac switch my-project    # プロジェクト切り替え"
     echo "  isac switch new-proj -y   # 新規プロジェクト自動作成"
+    echo "  isac persona list         # ペルソナ一覧"
+    echo "  isac persona set king-bonbi  # ペルソナ設定"
     echo ""
 }
 
@@ -95,6 +102,116 @@ validate_project_id() {
     fi
 
     return 0
+}
+
+# ペルソナ名のバリデーション
+validate_persona_name() {
+    local name="$1"
+
+    # 空チェック
+    if [ -z "${name}" ]; then
+        echo -e "${RED}Error: Persona name cannot be empty${NC}"
+        return 1
+    fi
+
+    # パストラバーサル防止（/, .., バックスラッシュ）
+    if echo "${name}" | grep -qE '[/\\]|\.\.'; then
+        echo -e "${RED}Error: Persona name cannot contain '/', '\\', or '..'${NC}"
+        return 1
+    fi
+
+    # 英数字、ハイフン、アンダースコアのみ許可
+    if ! echo "${name}" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+        echo -e "${RED}Error: Persona name can only contain alphanumeric characters, hyphens, and underscores${NC}"
+        return 1
+    fi
+
+    return 0
+}
+
+# 現在のペルソナ名を取得
+# 優先順位: .isac.yaml > ~/.isac/config.yaml > default
+get_current_persona() {
+    local persona=""
+
+    # 1. .isac.yaml から取得
+    if [ -f ".isac.yaml" ]; then
+        persona=$(grep -E "^persona:" .isac.yaml | sed 's/persona: *//' | tr -d "\"'" || true)
+    fi
+
+    # 2. ~/.isac/config.yaml の default_persona から取得
+    if [ -z "${persona}" ] && [ -f "${ISAC_GLOBAL_DIR}/config.yaml" ]; then
+        persona=$(grep -E "^default_persona:" "${ISAC_GLOBAL_DIR}/config.yaml" | sed 's/default_persona: *//' | tr -d "\"'" || true)
+    fi
+
+    # 3. デフォルト
+    if [ -z "${persona}" ]; then
+        persona="default"
+    fi
+
+    echo "${persona}"
+}
+
+# ペルソナファイルのパスを取得（存在チェック付き）
+get_persona_file() {
+    local name="$1"
+    local persona_file="${ISAC_GLOBAL_DIR}/personas/${name}.md"
+
+    if [ ! -f "${persona_file}" ]; then
+        echo ""
+        return 1
+    fi
+
+    echo "${persona_file}"
+}
+
+# CLAUDE.md のマーカー間にペルソナを注入
+inject_persona() {
+    local claudemd_file="$1"
+    local persona_name="$2"
+
+    # CLAUDE.md が存在しない場合はスキップ
+    if [ ! -f "${claudemd_file}" ]; then
+        return 0
+    fi
+
+    # マーカーが存在しない場合はスキップ
+    if ! grep -q '<!-- ISAC:PERSONA:BEGIN -->' "${claudemd_file}"; then
+        return 0
+    fi
+
+    # ペルソナファイルを取得
+    local persona_file
+    persona_file=$(get_persona_file "${persona_name}")
+    if [ -z "${persona_file}" ]; then
+        echo -e "${YELLOW}Warning: Persona '${persona_name}' not found in ${ISAC_GLOBAL_DIR}/personas/${NC}"
+        return 0
+    fi
+
+    # ペルソナの内容を読み込み
+    local persona_content
+    persona_content=$(cat "${persona_file}")
+
+    # 一時ファイルを使ってマーカー間を置換
+    local tmp_file
+    tmp_file=$(mktemp)
+
+    local in_persona=false
+    while IFS= read -r line || [ -n "${line}" ]; do
+        if echo "${line}" | grep -q '<!-- ISAC:PERSONA:BEGIN -->'; then
+            echo "${line}" >> "${tmp_file}"
+            echo "${persona_content}" >> "${tmp_file}"
+            in_persona=true
+        elif echo "${line}" | grep -q '<!-- ISAC:PERSONA:END -->'; then
+            echo "${line}" >> "${tmp_file}"
+            in_persona=false
+        elif [ "${in_persona}" = false ]; then
+            echo "${line}" >> "${tmp_file}"
+        fi
+    done < "${claudemd_file}"
+
+    # 元のファイルを置換
+    mv "${tmp_file}" "${claudemd_file}"
 }
 
 # バージョンキャッシュが有効か確認
@@ -154,12 +271,12 @@ cmd_install() {
     echo ""
 
     # ディレクトリ作成
-    echo -e "${GREEN}[1/5] Creating ~/.isac/ directory...${NC}"
+    echo -e "${GREEN}[1/7] Creating ~/.isac/ directory...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}"
     chmod 700 "${ISAC_GLOBAL_DIR}"
 
     # Hooks コピー
-    echo -e "${GREEN}[2/5] Installing hooks...${NC}"
+    echo -e "${GREEN}[2/7] Installing hooks...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/hooks"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/hooks" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/hooks/"*.sh "${ISAC_GLOBAL_DIR}/hooks/" 2>/dev/null || true
@@ -170,7 +287,7 @@ cmd_install() {
     fi
 
     # Skills コピー（ディレクトリ構造）
-    echo -e "${GREEN}[3/5] Installing skills...${NC}"
+    echo -e "${GREEN}[3/7] Installing skills...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/skills"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
         # 既存のスキルを削除して再コピー
@@ -188,7 +305,7 @@ cmd_install() {
     fi
 
     # Agents コピー（SubAgent定義）
-    echo -e "${GREEN}[4/5] Installing agents...${NC}"
+    echo -e "${GREEN}[4/7] Installing agents...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/agents"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/agents" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/agents/"*.md "${ISAC_GLOBAL_DIR}/agents/" 2>/dev/null || true
@@ -197,8 +314,20 @@ cmd_install() {
         echo -e "${YELLOW}  Warning: Source agents not found${NC}"
     fi
 
+    # Personas コピー
+    echo -e "${GREEN}[5/7] Installing personas...${NC}"
+    mkdir -p "${ISAC_GLOBAL_DIR}/personas"
+    if [ -d "${ISAC_SOURCE_DIR}/templates/personas" ]; then
+        cp -f "${ISAC_SOURCE_DIR}/templates/personas/"*.md "${ISAC_GLOBAL_DIR}/personas/" 2>/dev/null || true
+        local persona_count
+        persona_count=$(ls -1 "${ISAC_GLOBAL_DIR}/personas/"*.md 2>/dev/null | wc -l | tr -d ' ')
+        echo -e "  Copied ${persona_count} personas to ${ISAC_GLOBAL_DIR}/personas/"
+    else
+        echo -e "${YELLOW}  Warning: Source personas not found${NC}"
+    fi
+
     # CLAUDE.md コピー（~/.isac/CLAUDE.md → ~/.claude/CLAUDE.md）
-    echo -e "${GREEN}[5/6] Setting up CLAUDE.md...${NC}"
+    echo -e "${GREEN}[6/7] Setting up CLAUDE.md...${NC}"
     if [ -f "${ISAC_SOURCE_DIR}/templates/CLAUDE.md.template" ]; then
         # テンプレートから~/.isac/CLAUDE.md を作成（言語設定セクションのみ抽出）
         if [ ! -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" ]; then
@@ -221,7 +350,7 @@ CLAUDEMD_EOF
     fi
 
     # 設定ファイル作成
-    echo -e "${GREEN}[6/6] Creating config.yaml...${NC}"
+    echo -e "${GREEN}[7/7] Creating config.yaml...${NC}"
     if [ ! -f "${ISAC_GLOBAL_DIR}/config.yaml" ]; then
         cat > "${ISAC_GLOBAL_DIR}/config.yaml" << 'EOF'
 # ISAC Global Configuration
@@ -235,6 +364,10 @@ memory_service_url: http://localhost:8100
 
 # Team ID (for team knowledge sharing)
 # team_id: my-team
+
+# Default persona (optional, applied when .isac.yaml has no persona field)
+# Available personas: ls ~/.isac/personas/
+# default_persona: king-bonbi
 EOF
         echo -e "  Created ${ISAC_GLOBAL_DIR}/config.yaml"
     else
@@ -267,7 +400,7 @@ cmd_update() {
     fi
 
     # Hooks 更新
-    echo -e "${GREEN}[1/4] Updating hooks...${NC}"
+    echo -e "${GREEN}[1/5] Updating hooks...${NC}"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/hooks" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/hooks/"*.sh "${ISAC_GLOBAL_DIR}/hooks/" 2>/dev/null || true
         chmod +x "${ISAC_GLOBAL_DIR}/hooks/"*.sh 2>/dev/null || true
@@ -275,7 +408,7 @@ cmd_update() {
     fi
 
     # Skills 更新（ディレクトリ構造）
-    echo -e "${GREEN}[2/4] Updating skills...${NC}"
+    echo -e "${GREEN}[2/5] Updating skills...${NC}"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
         rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
         cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
@@ -289,15 +422,25 @@ cmd_update() {
     fi
 
     # Agents 更新
-    echo -e "${GREEN}[3/4] Updating agents...${NC}"
+    echo -e "${GREEN}[3/5] Updating agents...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/agents"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/agents" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/agents/"*.md "${ISAC_GLOBAL_DIR}/agents/" 2>/dev/null || true
         echo -e "  Updated agents"
     fi
 
+    # Personas 更新
+    echo -e "${GREEN}[4/5] Updating personas...${NC}"
+    mkdir -p "${ISAC_GLOBAL_DIR}/personas"
+    if [ -d "${ISAC_SOURCE_DIR}/templates/personas" ]; then
+        cp -f "${ISAC_SOURCE_DIR}/templates/personas/"*.md "${ISAC_GLOBAL_DIR}/personas/" 2>/dev/null || true
+        local persona_count
+        persona_count=$(ls -1 "${ISAC_GLOBAL_DIR}/personas/"*.md 2>/dev/null | wc -l | tr -d ' ')
+        echo -e "  Updated ${persona_count} personas in ~/.isac/personas/"
+    fi
+
     # CLAUDE.md 更新（~/.isac/CLAUDE.md → ~/.claude/CLAUDE.md）
-    echo -e "${GREEN}[4/4] Updating CLAUDE.md...${NC}"
+    echo -e "${GREEN}[5/5] Updating CLAUDE.md...${NC}"
     if [ -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" ]; then
         mkdir -p "${HOME}/.claude"
         cp -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" "${HOME}/.claude/CLAUDE.md"
@@ -365,6 +508,12 @@ cmd_init() {
         exit 1
     fi
 
+    # 既存の persona フィールドを保持
+    local existing_persona=""
+    if [ -f ".isac.yaml" ]; then
+        existing_persona=$(grep -E "^persona:" .isac.yaml | sed 's/persona: *//' | tr -d "\"'" || true)
+    fi
+
     # .isac.yaml 作成
     if [ -f ".isac.yaml" ] && [ "${flag_force}" = false ]; then
         echo -e "${YELLOW}Warning: .isac.yaml already exists${NC}"
@@ -385,6 +534,11 @@ project_id: ${project_id}
 # Team ID (optional, for team knowledge sharing)
 # team_id: my-team
 EOF
+
+    # 既存の persona フィールドを復元
+    if [ -n "${existing_persona}" ]; then
+        echo "persona: ${existing_persona}" >> ".isac.yaml"
+    fi
 
     echo -e "${GREEN}✓ Created .isac.yaml${NC}"
 
@@ -451,6 +605,14 @@ SECRETS_EOF
     if [ "${create_claude_dir}" = true ]; then
         setup_claude_directory "${flag_force}"
         setup_mcp_servers "${flag_force}"
+    fi
+
+    # ペルソナの注入（CLAUDE.md のマーカー間を更新）
+    local current_persona
+    current_persona=$(get_current_persona)
+    if [ -f "CLAUDE.md" ] && [ -d "${ISAC_GLOBAL_DIR}/personas" ]; then
+        inject_persona "CLAUDE.md" "${current_persona}"
+        echo -e "${GREEN}✓ Persona: ${CYAN}${current_persona}${NC}"
     fi
 
     echo ""
@@ -926,6 +1088,11 @@ cmd_status() {
 
     echo -e "Project: ${CYAN}${project_id}${NC} (${project_source})"
 
+    # 現在のペルソナ
+    local current_persona
+    current_persona=$(get_current_persona)
+    echo -e "Persona: ${CYAN}${current_persona}${NC}"
+
     # Memory Service 接続
     local memory_url
     memory_url=$(get_memory_url)
@@ -1086,17 +1253,39 @@ cmd_switch() {
         fi
     fi
 
+    # 既存の persona フィールドを保持
+    local existing_persona=""
+    if [ -f ".isac.yaml" ]; then
+        existing_persona=$(grep -E "^persona:" .isac.yaml | sed 's/persona: *//' | tr -d "\"'" || true)
+    fi
+
     # .isac.yaml 作成/更新
-    cat > ".isac.yaml" << EOF
+    if [ -n "${existing_persona}" ]; then
+        cat > ".isac.yaml" << EOF
+# ISAC Project Configuration
+project_id: ${project_id}
+persona: ${existing_persona}
+EOF
+    else
+        cat > ".isac.yaml" << EOF
 # ISAC Project Configuration
 project_id: ${project_id}
 EOF
+    fi
 
     echo -e "${GREEN}Switched to: ${CYAN}${project_id}${NC}"
 
     # .isac.secrets.yaml があれば MCP サーバーを再登録
     if [ -f ".isac.secrets.yaml" ]; then
         setup_mcp_servers true
+    fi
+
+    # ペルソナの注入（CLAUDE.md のマーカー間を更新）
+    local current_persona
+    current_persona=$(get_current_persona)
+    if [ -f "CLAUDE.md" ] && [ -d "${ISAC_GLOBAL_DIR}/personas" ]; then
+        inject_persona "CLAUDE.md" "${current_persona}"
+        echo -e "Persona: ${CYAN}${current_persona}${NC}"
     fi
 
     # 直近の決定事項を表示
@@ -1137,6 +1326,154 @@ get_memory_url() {
     echo "${url:-http://localhost:8100}"
 }
 
+# ペルソナコマンド
+cmd_persona() {
+    local subcmd="${1:-}"
+    shift 2>/dev/null || true
+
+    case "${subcmd}" in
+        list)
+            echo -e "${BLUE}=== Available Personas ===${NC}"
+            echo ""
+
+            if [ ! -d "${ISAC_GLOBAL_DIR}/personas" ]; then
+                echo -e "${YELLOW}No personas installed.${NC}"
+                echo "Run 'isac install' or 'isac update' first."
+                exit 1
+            fi
+
+            local current_persona
+            current_persona=$(get_current_persona)
+
+            local found=false
+            for persona_file in "${ISAC_GLOBAL_DIR}/personas/"*.md; do
+                if [ -f "${persona_file}" ]; then
+                    local name
+                    name=$(basename "${persona_file}" .md)
+                    if [ "${name}" = "${current_persona}" ]; then
+                        echo -e "  ${GREEN}* ${name}${NC} (current)"
+                    else
+                        echo "    ${name}"
+                    fi
+                    found=true
+                fi
+            done
+
+            if [ "${found}" = false ]; then
+                echo "  (no personas found)"
+            fi
+            ;;
+
+        set)
+            local persona_name="${1:-}"
+
+            if [ -z "${persona_name}" ]; then
+                echo -e "${RED}Error: Persona name required${NC}"
+                echo "Usage: isac persona set <name>"
+                echo ""
+                echo "Available personas:"
+                for persona_file in "${ISAC_GLOBAL_DIR}/personas/"*.md; do
+                    if [ -f "${persona_file}" ]; then
+                        echo "  $(basename "${persona_file}" .md)"
+                    fi
+                done
+                exit 1
+            fi
+
+            # バリデーション
+            if ! validate_persona_name "${persona_name}"; then
+                exit 1
+            fi
+
+            # ペルソナファイルの存在確認
+            if [ ! -f "${ISAC_GLOBAL_DIR}/personas/${persona_name}.md" ]; then
+                echo -e "${RED}Error: Persona '${persona_name}' not found${NC}"
+                echo ""
+                echo "Available personas:"
+                for persona_file in "${ISAC_GLOBAL_DIR}/personas/"*.md; do
+                    if [ -f "${persona_file}" ]; then
+                        echo "  $(basename "${persona_file}" .md)"
+                    fi
+                done
+                exit 1
+            fi
+
+            # .isac.yaml が存在しない場合はエラー
+            if [ ! -f ".isac.yaml" ]; then
+                echo -e "${RED}Error: .isac.yaml not found. Run 'isac init' first.${NC}"
+                exit 1
+            fi
+
+            # .isac.yaml に persona フィールドを追加/更新
+            if grep -q "^persona:" ".isac.yaml"; then
+                # 既存の persona フィールドを更新
+                local tmp_yaml
+                tmp_yaml=$(mktemp)
+                sed "s/^persona:.*/persona: ${persona_name}/" ".isac.yaml" > "${tmp_yaml}"
+                mv "${tmp_yaml}" ".isac.yaml"
+            else
+                # persona フィールドを追加
+                echo "persona: ${persona_name}" >> ".isac.yaml"
+            fi
+
+            # CLAUDE.md にペルソナを注入
+            if [ -f "CLAUDE.md" ]; then
+                inject_persona "CLAUDE.md" "${persona_name}"
+            fi
+
+            echo -e "${GREEN}Persona set to: ${CYAN}${persona_name}${NC}"
+
+            # ペルソナの概要を表示
+            local first_line
+            first_line=$(grep -m1 "^#" "${ISAC_GLOBAL_DIR}/personas/${persona_name}.md" | sed 's/^# *//' || true)
+            if [ -n "${first_line}" ]; then
+                echo -e "  ${first_line}"
+            fi
+            ;;
+
+        show)
+            local current_persona
+            current_persona=$(get_current_persona)
+
+            echo -e "${BLUE}=== Current Persona ===${NC}"
+            echo ""
+            echo -e "Persona: ${CYAN}${current_persona}${NC}"
+
+            # ソースを表示
+            local source="default"
+            if [ -f ".isac.yaml" ] && grep -qE "^persona:" .isac.yaml; then
+                source=".isac.yaml"
+            elif [ -f "${ISAC_GLOBAL_DIR}/config.yaml" ] && grep -qE "^default_persona:" "${ISAC_GLOBAL_DIR}/config.yaml"; then
+                source="~/.isac/config.yaml (default_persona)"
+            fi
+            echo "Source: ${source}"
+
+            # ペルソナファイルの内容を表示
+            local persona_file="${ISAC_GLOBAL_DIR}/personas/${current_persona}.md"
+            if [ -f "${persona_file}" ]; then
+                echo ""
+                echo -e "${YELLOW}--- Persona Content ---${NC}"
+                cat "${persona_file}"
+            else
+                echo ""
+                echo -e "${YELLOW}Warning: Persona file not found at ${persona_file}${NC}"
+            fi
+            ;;
+
+        "")
+            echo -e "${RED}Error: Subcommand required${NC}"
+            echo "Usage: isac persona <list|set|show>"
+            exit 1
+            ;;
+
+        *)
+            echo -e "${RED}Unknown persona subcommand: ${subcmd}${NC}"
+            echo "Usage: isac persona <list|set|show>"
+            exit 1
+            ;;
+    esac
+}
+
 # メイン
 case "${1:-}" in
     install)
@@ -1159,6 +1496,10 @@ case "${1:-}" in
     switch)
         shift
         cmd_switch "$@"
+        ;;
+    persona)
+        shift
+        cmd_persona "$@"
         ;;
     version|--version|-v)
         show_version
