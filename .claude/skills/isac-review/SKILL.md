@@ -27,13 +27,14 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 
 ### 1. ペルソナの設定
 
-以下の3人のペルソナで議論を行います：
+以下の4人のペルソナで議論を行います：
 
 | ペルソナ | 役割 | 視点 |
 |---------|------|------|
 | 実装者 | バックエンド/フロントエンド開発者 | 実装の容易さ、保守性、コード品質 |
 | 運用者 | SRE/DevOpsエンジニア | 運用負荷、監視、スケーラビリティ |
 | アーキテクト | 技術リード/設計者 | 全体設計、拡張性、技術的負債 |
+| 懐疑的レビュアー | 批判的検証者 | 要件との乖離、過剰設計、見落とされたリスク、より単純な代替案の有無 |
 
 ### 2. 議論フォーマット
 
@@ -78,7 +79,7 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
   -H "Content-Type: application/json" \
   -d '{
-    "content": "【決定】[決定内容]\n【理由】[主な理由]\n【検討過程】3人のペルソナでレビュー実施。[簡潔な経緯]",
+    "content": "【決定】[決定内容]\n【理由】[主な理由]\n【検討過程】4人のペルソナでレビュー実施。[簡潔な経緯]",
     "type": "decision",
     "importance": [0.6-0.9],
     "scope": "project",
@@ -86,7 +87,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
     "metadata": {
       "category": "[カテゴリ]",
       "review_type": "persona_review",
-      "participants": 3
+      "participants": 4
     }
   }'
 ```
@@ -110,7 +111,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 ### 出力例
 
 ```
-## 🎭 3人のペルソナによる議論
+## 🎭 4人のペルソナによる議論
 
 ### 議題: 認証方式の選定（JWT vs セッション）
 
@@ -143,11 +144,21 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 
 ---
 
+**🤔 中村（懐疑的レビュアー・12年目）**
+> 全員JWTに賛成だが、本当にマイクロサービス展開の予定はあるのか？
+> 現時点でモノリスなら、セッションのほうがトークン無効化が容易で運用が楽。
+> JWTを選ぶなら「なぜセッションではダメか」を明確にすべき。
+>
+> **懸念点**: YAGNI原則。将来の拡張を理由にした過剰設計のリスク
+> **推奨**: JWT（ただし選定理由を明文化すること）
+
+---
+
 ## 📊 投票結果
 
 | 選択肢 | 票数 | 支持者 |
 |--------|------|--------|
-| JWT | 3 | 田中, 高橋, 加藤 |
+| JWT | 4 | 田中, 高橋, 加藤, 中村 |
 | セッション | 0 | - |
 
 ## 🎯 結論
@@ -167,7 +178,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 
 | 指定 | ペルソナ数 | 用途 |
 |------|-----------|------|
-| `/isac-review` | 3人 | 標準的な設計レビュー |
+| `/isac-review` | 4人 | 標準的な設計レビュー |
 | `/isac-review --quick` | 2人 | 軽微な決定 |
 | `/isac-review --full` | 5人 | 重要なアーキテクチャ決定 |
 | `/isac-review --team` | 10人 | 大きな技術選定 |
