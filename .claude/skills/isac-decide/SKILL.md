@@ -7,6 +7,16 @@ description: 重要な技術的決定を記録します。
 
 重要な技術的決定を記録します。
 
+## project_id の取得ルール
+
+**重要**: project_id は必ず `.isac.yaml` ファイルから取得すること。`$CLAUDE_PROJECT` 環境変数は `.isac.yaml` が存在しない場合のフォールバックとしてのみ使用する。
+
+```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+```
+
+以下のすべての curl コマンドで、この方法で取得した `$PROJECT_ID` を使用すること。
+
 ## 使用場面
 
 - アーキテクチャの決定
@@ -19,6 +29,8 @@ description: 重要な技術的決定を記録します。
 重要な決定を記録する際は、以下の形式で Memory Service に保存してください:
 
 ```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
 curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
   -H "Content-Type: application/json" \
   -d '{
@@ -26,7 +38,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
     "type": "decision",
     "importance": 0.8,
     "scope": "project",
-    "scope_id": "'"${CLAUDE_PROJECT:-default}"'",
+    "scope_id": "'"$PROJECT_ID"'",
     "metadata": {
       "category": "authentication",
       "decision": "JWT採用"
@@ -66,11 +78,13 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 過去の決定を確認:
 
 ```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
 curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/search" \
   --data-urlencode "query=認証" \
   --data-urlencode "type=decision" \
   --data-urlencode "scope=project" \
-  --data-urlencode "scope_id=${CLAUDE_PROJECT:-default}"
+  --data-urlencode "scope_id=$PROJECT_ID"
 ```
 
 ## 関連スキル

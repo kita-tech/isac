@@ -7,6 +7,16 @@ description: 設計や技術選定を複数のペルソナで検討し、決定�
 
 設計や技術選定を複数のペルソナで検討し、決定を記録します。
 
+## project_id の取得ルール
+
+**重要**: project_id は必ず `.isac.yaml` ファイルから取得すること。`$CLAUDE_PROJECT` 環境変数は `.isac.yaml` が存在しない場合のフォールバックとしてのみ使用する。
+
+```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+```
+
+決定の記録時に Memory Service へ保存する際は、この方法で取得した `$PROJECT_ID` を使用すること。
+
 ## 使い方
 
 ```
@@ -63,6 +73,8 @@ description: 設計や技術選定を複数のペルソナで検討し、決定�
 **Yes の場合**、以下の形式で Memory Service に保存：
 
 ```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+
 curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
   -H "Content-Type: application/json" \
   -d '{
@@ -70,7 +82,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
     "type": "decision",
     "importance": [0.6-0.9],
     "scope": "project",
-    "scope_id": "[現在のプロジェクトID]",
+    "scope_id": "'"$PROJECT_ID"'",
     "metadata": {
       "category": "[カテゴリ]",
       "review_type": "persona_review",
