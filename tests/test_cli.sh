@@ -976,6 +976,81 @@ rm -f "$_REGISTER_MCP_FUNC_FILE"
 echo ""
 
 # ========================================
+# テスト19: Skills クリーンアップと Git管理スキル保護
+# ========================================
+echo -e "${BLUE}テスト19: Skills クリーンアップと Git管理スキル保護${NC}"
+echo "----------------------------------------"
+
+# 19-1. isac install 後に ~/.claude/skills/isac-* が存在しないことを検証
+# 事前にダミーのisac-*を配置
+mkdir -p "$HOME/.claude/skills/isac-dummy-test-skill"
+echo "dummy" > "$HOME/.claude/skills/isac-dummy-test-skill/SKILL.md"
+
+OUTPUT=$("$ISAC_CMD" install 2>&1)
+if ! ls "$HOME/.claude/skills/"isac-* >/dev/null 2>&1; then
+    test_pass "isac install 後に ~/.claude/skills/isac-* が存在しない"
+else
+    test_fail "isac install 後のクリーンアップ" "~/.claude/skills/isac-* が残っている"
+    # テスト後のクリーンアップ
+    rm -rf "$HOME/.claude/skills/"isac-*
+fi
+
+# 19-2. isac update 後に ~/.claude/skills/isac-* がクリーンアップされることを検証
+# 事前にダミーのisac-*を配置
+mkdir -p "$HOME/.claude/skills/isac-old-cleanup-test"
+echo "old skill" > "$HOME/.claude/skills/isac-old-cleanup-test/SKILL.md"
+
+# ダミーが配置されたことを確認
+if ls "$HOME/.claude/skills/"isac-* >/dev/null 2>&1; then
+    OUTPUT=$("$ISAC_CMD" update 2>&1)
+    if ! ls "$HOME/.claude/skills/"isac-* >/dev/null 2>&1; then
+        test_pass "isac update 後に ~/.claude/skills/isac-* がクリーンアップされる"
+    else
+        test_fail "isac update 後のクリーンアップ" "~/.claude/skills/isac-* が残っている"
+        rm -rf "$HOME/.claude/skills/"isac-*
+    fi
+else
+    test_fail "isac update クリーンアップテストの準備" "ダミーファイルの配置に失敗"
+fi
+
+# 19-3. Git管理されたスキルディレクトリがある場合、isac init でシンボリックリンクに置き換えられない
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+
+# Git リポジトリを初期化
+git init --quiet
+mkdir -p .claude/skills/isac-git-managed/
+echo "---
+name: isac-git-managed
+description: Git managed test skill
+---
+# Test Skill" > .claude/skills/isac-git-managed/SKILL.md
+git add .claude/skills/
+git commit -m "Add git-managed skill" --quiet
+
+# isac init を実行
+OUTPUT=$("$ISAC_CMD" init "git-skill-test" --yes --force 2>&1)
+
+# .claude/skills/isac-git-managed/ がシンボリックリンクではなく実ディレクトリとして残っていることを確認
+if [ -d ".claude/skills/isac-git-managed" ] && [ ! -L ".claude/skills/isac-git-managed" ]; then
+    test_pass "Git管理されたスキルがシンボリックリンクに置き換えられない"
+else
+    test_fail "Git管理スキルの保護" ".claude/skills/isac-git-managed がシンボリックリンクに置き換えられた"
+fi
+
+# 出力に "skipped symlink" が含まれることを確認
+if echo "$OUTPUT" | grep -q "skipped symlink"; then
+    test_pass "Git管理スキルの場合 'skipped symlink' メッセージが表示される"
+else
+    test_fail "skipped symlink メッセージ" "Output: $OUTPUT"
+fi
+
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
 # クリーンアップ
 # ========================================
 rm -f "$_LOAD_SECRETS_FUNC_FILE" 2>/dev/null
