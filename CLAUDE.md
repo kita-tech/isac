@@ -204,8 +204,8 @@ ISACのスキルは必ず `isac-` プレフィックスを付けること（他�
 |---------|------|
 | `/isac-autopilot` | 設計→実装→レビュー→テスト→Draft PR作成を自動実行 |
 | `/isac-review` | 設計レビュー（ペルソナ議論） |
-| `/isac-code-review` | コードレビュー（品質チェック・スコアリング） |
-| `/isac-pr-review` | GitHub PRレビュー（PRコメントに投稿） |
+| `/isac-code-review` | コードレビュー（4ペルソナ・スコアリング） |
+| `/isac-pr-review` | GitHub PRレビュー（4ペルソナ・PRコメント投稿） |
 | `/isac-memory` | 記憶の検索・管理 |
 | `/isac-decide` | 決定の記録 |
 | `/isac-suggest` | 状況に応じたSkill提案（未完了タスクも表示） |
