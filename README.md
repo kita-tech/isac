@@ -61,8 +61,10 @@ docker compose up -d
 cd /path/to/your/project
 
 # プロジェクト初期化
-# → .isac.yaml ファイルを作成し、このディレクトリをISACプロジェクトとして登録
-# → プロジェクト名を聞かれるので入力（デフォルトはディレクトリ名）
+# → .isac.yaml、.isac.secrets.yaml.example を作成
+# → .claude/ ディレクトリをセットアップ（hooks/skills のシンボリックリンク）
+# → MCPサーバー（notion, context7）を自動登録
+# → プロジェクト名を聞かれるので入力（デフォルトは既存.isac.yamlの値 or ディレクトリ名）
 isac init
 
 # Claude Code CLIを起動して開発開始
@@ -76,7 +78,7 @@ claude
 |---------|------|---------------|
 | `isac install` | ~/.isac/ にhooksとskillsをインストール | 初回のみ |
 | `isac update` | ISACを更新した後、グローバル設定を最新化 | ISACをgit pullした後 |
-| `isac init` | 現在のディレクトリを新規プロジェクトとして登録 | 新しいプロジェクトを始めるとき |
+| `isac init` | プロジェクト初期化（再初期化時は既存設定を引き継ぎ） | 新しいプロジェクトを始めるとき |
 | `isac init --yes` | 確認なしで初期化（CI/CD向け） | 自動化スクリプトで使う |
 | `isac init --force` | 既存設定を上書きして再初期化 | 設定をリセットしたいとき |
 | `isac status` | 現在のプロジェクト情報・Memory Service接続状況を表示 | 状態確認したいとき |
@@ -85,18 +87,36 @@ claude
 
 ### isac init の動作
 
-`isac init` を実行すると、以下が自動的に作成されます：
+`isac init` を実行すると、以下が自動的に行われます：
+
+1. **プロジェクトID の決定**
+   - 優先順位: コマンド引数 > 既存 `.isac.yaml` の値 > ディレクトリ名
+   - 再初期化時は既存の `.isac.yaml` から `project_id` を引き継ぐ
+
+2. **ファイルの作成**
 
 ```
 プロジェクト/
-├── .isac.yaml              # プロジェクトID設定
-└── .claude/                # Claude Code CLI設定（自動作成）
-    ├── settings.yaml       # 設定ファイル（詳細コメント付き）
-    ├── hooks/              # ~/.isac/hooks/ へのシンボリックリンク
-    └── skills/             # ~/.isac/skills/ へのシンボリックリンク
+├── .isac.yaml                 # プロジェクトID設定
+├── .isac.secrets.yaml.example # シークレット設定テンプレート（自動生成）
+└── .claude/                   # Claude Code CLI設定（自動作成）
+    ├── settings.yaml          # Hooks設定ファイル（詳細コメント付き）
+    ├── hooks/                 # ~/.isac/hooks/ へのシンボリックリンク
+    └── skills/                # ~/.isac/skills/ へのシンボリックリンク
 ```
 
-これにより、新規プロジェクトでもすぐにISACの全機能が使えます。
+3. **MCPサーバーの自動登録**
+   - `notion`（Notionページ取得）と `context7`（ライブラリドキュメント参照）を `~/.claude.json` に登録
+   - `.isac.secrets.yaml` があれば、そのAPIキーを使用して登録
+
+4. **シークレット管理**
+   - `.isac.secrets.yaml.example` をテンプレートとして生成
+   - `.gitignore` に `.isac.secrets.yaml` を自動追記
+   - プロジェクトごとに `.isac.secrets.yaml` でMCPのAPIキーを管理可能（詳細は [CLAUDE.md](CLAUDE.md) を参照）
+
+5. **Memory Service 接続確認**
+
+> **Note**: `settings.yaml` はHooks設定用です。MCPサーバーは `claude mcp add --scope user` で `~/.claude.json` に登録されます（詳細は [CLAUDE.md](CLAUDE.md) を参照）。
 
 > **チーム開発での注意**: `hooks/` と `skills/` はシンボリックリンクなので、Gitにはコミットされません。チームメンバーは各自 `isac init --force` を実行して自分の環境にリンクを作成してください。
 
@@ -255,7 +275,7 @@ isac/
 ├── bin/
 │   └── isac                    # メインCLI
 ├── .claude/
-│   ├── settings.yaml           # Hooks設定
+│   ├── settings.yaml           # Hooks設定（MCPサーバーは~/.claude.jsonで管理）
 │   ├── hooks/
 │   │   ├── on-prompt.sh        # 記憶検索
 │   │   ├── on-stop.sh          # タスク完了時のAI分類プロンプト
