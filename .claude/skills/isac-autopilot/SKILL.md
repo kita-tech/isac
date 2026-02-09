@@ -1,11 +1,11 @@
 ---
 name: isac-autopilot
-description: 要件から設計・実装・レビュー・テスト・Draft PR作成までを自動実行します。
+description: 要件からコンテキスト収集・設計・実装・レビュー・テスト・Draft PR作成までを自動実行します。
 ---
 
 # ISAC Autopilot Skill
 
-要件を入力すると、設計→実装→レビュー→テスト→Draft PR作成までをバックグラウンドで自動実行します。
+要件を入力すると、コンテキスト収集→設計→実装→レビュー→テスト→Draft PR作成までを自動実行します。
 
 ## 使い方
 
@@ -16,25 +16,25 @@ description: 要件から設計・実装・レビュー・テスト・Draft PR�
 
 ## 重要: 実行方法
 
-**このスキルはバックグラウンドで自動実行されます。**
+**このスキルはフォアグラウンドで自動実行されます。**
 
 Claude は以下の手順で実行してください：
 
-1. **Task tool を `run_in_background: true` で起動**
-2. **ユーザーには「バックグラウンドで実行中」と伝える**
-3. **出力ファイルのパスを共有**
-4. **完了を待たずに制御を返す**
+1. **Task tool を起動**（`run_in_background` は指定しない）
+2. **ユーザーには「Autopilot を実行中」と伝える**
+3. **完了後、結果（Draft PR URL等）をユーザーに報告**
 
 ### 実行コード例
 
 ```
 Task tool を以下のパラメータで呼び出す:
 - subagent_type: "general-purpose"
-- run_in_background: true
 - prompt: [下記の完全なプロンプトを渡す]
 ```
 
-## バックグラウンドエージェントへのプロンプト
+**注意**: フォアグラウンド実行にすることで、MCP ツール（notion, context7 等）がサブエージェント内で利用可能になります。
+
+## エージェントへのプロンプト
 
 以下のプロンプトをそのまま Task tool に渡してください（{requirement} を実際の要件で置換）：
 
@@ -49,10 +49,53 @@ Task tool を以下のパラメータで呼び出す:
 
 ## 実行フロー
 
+### Phase 0: コンテキスト収集（自動）
+
+Memory Service から関連記憶を取得し、実装時の判断材料にする。**2段階検索**で漏れなく取得する。
+
+1. **project_id を取得**:
+```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
+ENCODED_PROJECT_ID=$(printf '%s' "$PROJECT_ID" | jq -sRr @uri 2>/dev/null || printf '%s' "$PROJECT_ID")
+```
+
+2. **ステップ1: グローバルルールを常時取得**（要件に関係なく必ず実行）:
+```bash
+GLOBAL_RULES=$(curl -s --max-time 3 \
+    "$MEMORY_URL/search?scope=global&type=decision&limit=10" \
+    2>/dev/null || echo "")
+```
+グローバルルール（PR作成時のドキュメント更新確認、コーディング規約等）は要件と無関係に常に適用されるため、クエリなしで取得する。
+
+3. **ステップ2: 要件ベースのプロジェクト関連記憶を取得**:
+要件から主要なキーワードを2-3語抽出し、スペース区切りで検索クエリとして使用する。
+```bash
+CONTEXT=$(curl -s --max-time 5 "$MEMORY_URL/context/$ENCODED_PROJECT_ID" \
+    --get \
+    --data-urlencode "query={要件から抽出したキーワード 2-3語}" \
+    --data-urlencode "max_tokens=2000" \
+    2>/dev/null || echo "")
+```
+
+4. **取得した記憶を以降の Phase で活用**:
+   - ステップ1の `memories`: グローバルルール（ワークフロー、ドキュメント更新ルール等）
+   - ステップ2の `global_knowledge`: 要件に関連するグローバルナレッジ
+   - ステップ2の `project_decisions`: プロジェクト固有の決定事項
+   - ステップ2の `project_recent`: 最近の関連作業
+
+5. **環境確認**:
+   - Memory Service の接続状況（`curl -s --connect-timeout 1 "$MEMORY_URL/health"` で確認）
+   - 利用可能な MCP ツールの一覧を出力（フォアグラウンド実行なので親プロセスの MCP ツールが継承される）
+
+6. 出力: 接続状況、取得した記憶の要約（何件取得したか、主要なルール）
+
+**重要**: Memory Service が応答しない場合はスキップして Phase 1 に進む（エラーで停止しない）。MCP ツールがない場合も警告を出力して続行する。
+
 ### Phase 1: 設計（自動）
 
 1. 要件を分析
-2. 変更対象ファイルを特定
+2. **Phase 0 で取得した記憶を考慮**して変更対象ファイルを特定
 3. 実装方針を決定
 4. 出力: 設計サマリー
 
@@ -211,6 +254,14 @@ EOF
 📋 要件: {要件の要約}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧠 Phase 0: コンテキスト収集
+  Memory Service: {Connected / Not available (skipped)}
+  MCP ツール: {利用可能なMCPツール一覧 / なし}
+  ✓ グローバルルール: {n}件取得
+  ✓ プロジェクト記憶: {n}件取得
+  ✓ 主要ルール: {ルール要約}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📐 Phase 1: 設計
   ✓ 変更対象: {ファイル一覧}
   ✓ 実装方針: {方針}
@@ -352,18 +403,17 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 ## ユーザーへの返答テンプレート
 
-Claude は Task tool を起動した後、以下のように返答してください：
+Claude は Task tool を起動する前に、以下のように返答してください：
 
 ```
-🚀 ISAC Autopilot をバックグラウンドで起動しました。
+🚀 ISAC Autopilot を実行します。
 
 📋 要件: {要件の要約}
 
-進捗確認:
-  tail -f {output_file}
-
-完了までお待ちください。Draft PR が作成されたら通知します。
+完了まで少々お待ちください。
 ```
+
+完了後、結果（Draft PR URL、スコア等）をユーザーに報告してください。
 
 ## 設定
 
