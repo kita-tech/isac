@@ -342,8 +342,15 @@ cmd_init() {
     echo ""
 
     # プロジェクトIDの決定
+    # 優先順位: 引数 > 既存 .isac.yaml > ディレクトリ名（basename）
     if [ -z "${project_id}" ]; then
-        project_id="$(basename "$(pwd)")"
+        # 既存の.isac.yamlからproject_idを引き継ぐ
+        if [ -f ".isac.yaml" ]; then
+            project_id=$(grep -E "^project_id:" .isac.yaml | sed 's/project_id: *//' | tr -d "\"'" || true)
+        fi
+        if [ -z "${project_id}" ]; then
+            project_id="$(basename "$(pwd)")"
+        fi
         if [ "${flag_yes}" = false ]; then
             echo -n "Project ID [${project_id}]: "
             read -r input_id
