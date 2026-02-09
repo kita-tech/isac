@@ -51,16 +51,27 @@ Task tool を以下のパラメータで呼び出す:
 
 ### Phase 0: コンテキスト収集（自動）
 
-Memory Service から関連記憶を取得し、実装時の判断材料にする。**2段階検索**で漏れなく取得する。
+プロジェクトルールの読み込みと Memory Service からの記憶取得を行う。
 
-1. **project_id を取得**:
+**重要**: サブエージェントは CLAUDE.md を自動的に継承しないため、最初に明示的に読み込む必要がある。
+
+1. **CLAUDE.md を読み込む**（最優先）:
+   - Read tool で `CLAUDE.md` を読み込み、プロジェクトのルール・規約・禁止事項を把握する
+   - 特に以下を遵守すること:
+     - すべての応答・PR・コミットメッセージは日本語で行う
+     - 設計原則（懐疑的レビュアー必須等）
+     - コーディング規約
+     - 禁止事項
+     - 開発フロー
+
+2. **project_id を取得**:
 ```bash
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
 MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 ENCODED_PROJECT_ID=$(printf '%s' "$PROJECT_ID" | jq -sRr @uri 2>/dev/null || printf '%s' "$PROJECT_ID")
 ```
 
-2. **ステップ1: グローバルルールを常時取得**（要件に関係なく必ず実行）:
+3. **グローバルルールを常時取得**（要件に関係なく必ず実行）:
 ```bash
 GLOBAL_RULES=$(curl -s --max-time 3 \
     "$MEMORY_URL/search?scope=global&type=decision&limit=10" \
@@ -68,7 +79,7 @@ GLOBAL_RULES=$(curl -s --max-time 3 \
 ```
 グローバルルール（PR作成時のドキュメント更新確認、コーディング規約等）は要件と無関係に常に適用されるため、クエリなしで取得する。
 
-3. **ステップ2: 要件ベースのプロジェクト関連記憶を取得**:
+4. **要件ベースのプロジェクト関連記憶を取得**:
 要件から主要なキーワードを2-3語抽出し、スペース区切りで検索クエリとして使用する。
 ```bash
 CONTEXT=$(curl -s --max-time 5 "$MEMORY_URL/context/$ENCODED_PROJECT_ID" \
@@ -78,17 +89,17 @@ CONTEXT=$(curl -s --max-time 5 "$MEMORY_URL/context/$ENCODED_PROJECT_ID" \
     2>/dev/null || echo "")
 ```
 
-4. **取得した記憶を以降の Phase で活用**:
-   - ステップ1の `memories`: グローバルルール（ワークフロー、ドキュメント更新ルール等）
-   - ステップ2の `global_knowledge`: 要件に関連するグローバルナレッジ
-   - ステップ2の `project_decisions`: プロジェクト固有の決定事項
-   - ステップ2の `project_recent`: 最近の関連作業
+5. **取得した記憶を以降の Phase で活用**:
+   - ステップ3の `memories`: グローバルルール（ワークフロー、ドキュメント更新ルール等）
+   - ステップ4の `global_knowledge`: 要件に関連するグローバルナレッジ
+   - ステップ4の `project_decisions`: プロジェクト固有の決定事項
+   - ステップ4の `project_recent`: 最近の関連作業
 
-5. **環境確認**:
+6. **環境確認**:
    - Memory Service の接続状況（`curl -s --connect-timeout 1 "$MEMORY_URL/health"` で確認）
    - 利用可能な MCP ツールの一覧を出力（フォアグラウンド実行なので親プロセスの MCP ツールが継承される）
 
-6. 出力: 接続状況、取得した記憶の要約（何件取得したか、主要なルール）
+7. 出力: CLAUDE.md のルール確認結果、接続状況、取得した記憶の要約（何件取得したか、主要なルール）
 
 **重要**: Memory Service が応答しない場合はスキップして Phase 1 に進む（エラーで停止しない）。MCP ツールがない場合も警告を出力して続行する。
 
@@ -255,6 +266,7 @@ EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🧠 Phase 0: コンテキスト収集
+  CLAUDE.md: {読み込み済み / 未検出}
   Memory Service: {Connected / Not available (skipped)}
   MCP ツール: {利用可能なMCPツール一覧 / なし}
   ✓ グローバルルール: {n}件取得
