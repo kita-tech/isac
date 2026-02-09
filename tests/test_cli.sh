@@ -551,6 +551,88 @@ cd "$SCRIPT_DIR"
 echo ""
 
 # ========================================
+# テスト12.5: isac init の project_id 引き継ぎ
+# ========================================
+echo -e "${BLUE}テスト12.5: isac init の project_id 引き継ぎ${NC}"
+echo "----------------------------------------"
+
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+
+# 12.5-1. 既存の .isac.yaml から project_id を引き継ぐ
+cat > ".isac.yaml" << 'YAML_EOF'
+# ISAC Project Configuration
+project_id: existing-project
+YAML_EOF
+OUTPUT=$("$ISAC_CMD" init --yes --force 2>&1)
+if grep -q "project_id: existing-project" .isac.yaml 2>/dev/null; then
+    test_pass "既存の .isac.yaml から project_id を引き継ぐ"
+else
+    test_fail "project_id の引き継ぎ" "project_id が引き継がれていない"
+fi
+
+# 12.5-2. 引数が既存 .isac.yaml より優先される
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: old-project
+YAML_EOF
+OUTPUT=$("$ISAC_CMD" init "arg-project" --yes --force 2>&1)
+if grep -q "project_id: arg-project" .isac.yaml 2>/dev/null; then
+    test_pass "引数が既存 .isac.yaml の project_id より優先される"
+else
+    test_fail "引数の優先" "project_id が引数の値になっていない"
+fi
+
+# 12.5-3. .isac.yaml が存在しない場合はディレクトリ名をデフォルトにする
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init --yes 2>&1)
+EXPECTED_ID=$(basename "$TEST_DIR")
+if grep -q "project_id: ${EXPECTED_ID}" .isac.yaml 2>/dev/null; then
+    test_pass ".isac.yaml が存在しない場合はディレクトリ名がデフォルトになる"
+else
+    test_fail "ディレクトリ名デフォルト" "project_id がディレクトリ名になっていない"
+fi
+
+# 12.5-4. .isac.yaml に project_id がない場合はディレクトリ名をデフォルトにする
+cat > ".isac.yaml" << 'YAML_EOF'
+# ISAC Project Configuration
+# project_id is missing
+YAML_EOF
+OUTPUT=$("$ISAC_CMD" init --yes --force 2>&1)
+EXPECTED_ID=$(basename "$TEST_DIR")
+if grep -q "project_id: ${EXPECTED_ID}" .isac.yaml 2>/dev/null; then
+    test_pass ".isac.yaml に project_id がない場合はディレクトリ名がデフォルトになる"
+else
+    test_fail "project_id 欠落時のフォールバック" "project_id がディレクトリ名になっていない"
+fi
+
+# 12.5-5. クォート付き project_id の引き継ぎ（ダブルクォート）
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: "quoted-project"
+YAML_EOF
+OUTPUT=$("$ISAC_CMD" init --yes --force 2>&1)
+if grep -q "project_id: quoted-project" .isac.yaml 2>/dev/null; then
+    test_pass "ダブルクォート付き project_id が正しく引き継がれる"
+else
+    test_fail "ダブルクォート付き project_id" "project_id が正しく引き継がれていない"
+fi
+
+# 12.5-6. クォート付き project_id の引き継ぎ（シングルクォート）
+cat > ".isac.yaml" << 'YAML_EOF'
+project_id: 'single-quoted-project'
+YAML_EOF
+OUTPUT=$("$ISAC_CMD" init --yes --force 2>&1)
+if grep -q "project_id: single-quoted-project" .isac.yaml 2>/dev/null; then
+    test_pass "シングルクォート付き project_id が正しく引き継がれる"
+else
+    test_fail "シングルクォート付き project_id" "project_id が正しく引き継がれていない"
+fi
+
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
 # テスト13: projects コマンド
 # ========================================
 echo -e "${BLUE}テスト13: projects コマンド${NC}"
