@@ -100,12 +100,7 @@ USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
 MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 TASK_CONTENT="タスク内容"
 
-# Memory Service 接続確認
-if ! curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
-    echo "❌ Memory Service に接続できません（$MEMORY_URL）"
-    echo "Docker が起動しているか確認してください: docker compose -f memory-service/docker-compose.yml up -d"
-    exit 1
-fi
+# Memory Service 接続確認（共通処理を実行 — 「共通: Memory Service 接続確認」セクション参照）
 
 # sensitive-filter でチェック
 FILTER_RESULT=$(echo "$TASK_CONTENT" | bash .claude/hooks/sensitive-filter.sh 2>/dev/null)
@@ -174,12 +169,7 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
 MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-# Memory Service 接続確認
-if ! curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
-    echo "❌ Memory Service に接続できません（$MEMORY_URL）"
-    echo "Docker が起動しているか確認してください: docker compose -f memory-service/docker-compose.yml up -d"
-    exit 1
-fi
+# Memory Service 接続確認（共通処理を実行 — 「共通: Memory Service 接続確認」セクション参照）
 
 # /my/todos API を使用（直接パイプで処理、変数代入時の文字化け回避）
 RESULT=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending")
@@ -239,19 +229,20 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
 MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-# Memory Service 接続確認
-if ! curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
-    echo "❌ Memory Service に接続できません（$MEMORY_URL）"
-    echo "Docker が起動しているか確認してください: docker compose -f memory-service/docker-compose.yml up -d"
-    exit 1
-fi
+# Memory Service 接続確認（共通処理を実行 — 「共通: Memory Service 接続確認」セクション参照）
 
 # pending タスク一覧を取得
 RESULT=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending")
 COUNT=$(echo "$RESULT" | jq -r '.count')
 
+# COUNT が数値であることを確認（API エラー時のフォールバック）
+if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+    echo "❌ タスク一覧の取得に失敗しました"
+    exit 1
+fi
+
 # 番号の範囲チェック
-if [ "$TARGET_NUM" -lt 1 ] || [ "$TARGET_NUM" -gt "$COUNT" ] 2>/dev/null; then
+if [ "$TARGET_NUM" -lt 1 ] || [ "$TARGET_NUM" -gt "$COUNT" ]; then
     echo "❌ 番号が範囲外です（1〜${COUNT}の範囲で指定してください）"
     echo ""
     echo "/isac-todo list で一覧を確認してください。"
@@ -271,7 +262,7 @@ RESPONSE=$(curl -s -X PATCH "$MEMORY_URL/memory/$MEMORY_ID" \
 
 # 更新結果の確認
 if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
-    # 残件数を取得
+    # 残件数を取得（NOTE: /my/todos を再度呼び出している。頻度が低いため許容）
     REMAINING=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending" | jq -r '.count')
     echo "✅ タスクを完了しました"
     echo ""
@@ -310,12 +301,7 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
 MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-# Memory Service 接続確認
-if ! curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
-    echo "❌ Memory Service に接続できません（$MEMORY_URL）"
-    echo "Docker が起動しているか確認してください: docker compose -f memory-service/docker-compose.yml up -d"
-    exit 1
-fi
+# Memory Service 接続確認（共通処理を実行 — 「共通: Memory Service 接続確認」セクション参照）
 
 # 完了済みタスクを取得（自分の owner かつ status=done）
 RESULT=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=done")
@@ -336,7 +322,7 @@ echo "※ 廃止されたタスクは検索結果から除外されますが、�
 # ユーザーに確認を求める（「実行しますか？ y/n」）
 # → n の場合: echo "キャンセルしました。" && exit 0
 
-# 各タスクを deprecate
+# 各タスクを deprecate（NOTE: 1件ずつ API 呼び出し。一括 deprecate API がないため許容）
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 for ID in $(echo "$RESULT" | jq -r '.todos[].id'); do
