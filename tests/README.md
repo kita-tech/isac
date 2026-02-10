@@ -20,6 +20,18 @@ pip install -r tests/requirements.txt
 > **注意**: テスト用 Memory Service はポート **8200** で起動します。
 > 通常運用（ポート 8100）とは分離されているため、テスト中も通常サービスに影響しません。
 
+> **手動起動時の注意**: `docker-compose.test.yml` のサービス名は `memory-test`（本番は `memory`）です。
+> 手動でテスト用コンテナを起動する場合は、必ず `-p` フラグでプロジェクト名を指定してください。
+> `-p` を省略すると、同じディレクトリ内の本番コンテナと干渉する可能性があります。
+>
+> ```bash
+> # 推奨: -p でプロジェクト名を分離
+> docker compose -p isac-memory-test -f docker-compose.test.yml up -d --build
+>
+> # 停止時も同じプロジェクト名を指定
+> docker compose -p isac-memory-test -f docker-compose.test.yml down -v
+> ```
+
 ## テスト実行
 
 ### クイックテスト（推奨）
@@ -130,11 +142,11 @@ bash tests/run_all_tests.sh --help
 # テスト用コンテナの起動確認
 curl http://localhost:8200/health
 
-# テスト用コンテナの手動起動
-cd memory-service && docker compose -f docker-compose.test.yml up -d --build
+# テスト用コンテナの手動起動（-p でプロジェクト名を分離）
+cd memory-service && docker compose -p isac-memory-test -f docker-compose.test.yml up -d --build
 
 # テスト用コンテナのログ確認
-docker compose -f memory-service/docker-compose.test.yml logs
+docker compose -p isac-memory-test -f memory-service/docker-compose.test.yml logs
 ```
 
 ### jq が見つからない

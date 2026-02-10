@@ -3,7 +3,7 @@ ISAC Memory Service テスト用 pytest 設定
 
 テスト実行前に必要な環境:
     cd memory-service
-    docker compose -f docker-compose.test.yml up -d --build
+    docker compose -p isac-memory-test -f docker-compose.test.yml up -d --build
 """
 
 import os
