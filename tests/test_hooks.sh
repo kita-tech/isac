@@ -881,6 +881,134 @@ assert_file_grep "$CLASSIFIER_MD" "null" "memory-classifier.mdにscope_id=null�
 echo ""
 
 # ========================================
+# _log.sh ログ機能テスト
+# ========================================
+echo "----------------------------------------"
+echo "_log.sh ログ機能テスト"
+echo "----------------------------------------"
+
+# 元の値を保存
+ORIG_ISAC_GLOBAL_DIR="${ISAC_GLOBAL_DIR:-}"
+ORIG_CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
+
+# テスト1: _log.sh が存在し source 可能
+if source "$HOOKS_DIR/_log.sh" 2>/dev/null; then
+    echo -e "${GREEN}✓ PASS${NC}: _log.shが存在しsource可能"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: _log.shが存在しないまたはsource不可"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト2: isac_log関数がファイルにログを書き込む
+LOG_TEST_DIR=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR"
+export CLAUDE_PROJECT_DIR="$SCRIPT_DIR"
+source "$HOOKS_DIR/_log.sh"
+isac_log "test-hook" "OK test=true"
+if [ -f "$LOG_TEST_DIR/logs/hooks.log" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: isac_logがファイルにログを書き込む"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: isac_logがファイルにログを書き込まない"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト3: ログフォーマットの検証（タイムスタンプ、hook名、状態）
+if [ -f "$LOG_TEST_DIR/logs/hooks.log" ]; then
+    LOG_CONTENT=$(cat "$LOG_TEST_DIR/logs/hooks.log")
+    if echo "$LOG_CONTENT" | grep -qE '^\[.*\] \[test-hook\] OK test=true$'; then
+        echo -e "${GREEN}✓ PASS${NC}: ログフォーマットが正しい（タイムスタンプ、hook名、状態）"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: ログフォーマットが不正: $LOG_CONTENT"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+rm -rf "$LOG_TEST_DIR"
+
+# テスト4: ISAC開発プロジェクト以外ではログが出ない
+LOG_TEST_DIR2=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR2"
+export CLAUDE_PROJECT_DIR="/tmp/non-isac-project"
+source "$HOOKS_DIR/_log.sh"
+isac_log "test-hook" "should not appear"
+if [ ! -f "$LOG_TEST_DIR2/logs/hooks.log" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: ISAC以外のプロジェクトではログが出ない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: ISAC以外のプロジェクトでもログが出てしまった"
+    FAILED=$((FAILED + 1))
+fi
+rm -rf "$LOG_TEST_DIR2"
+
+# テスト5: CLAUDE_PROJECT_DIR未設定時もログが出ない
+LOG_TEST_DIR3=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR3"
+unset CLAUDE_PROJECT_DIR
+source "$HOOKS_DIR/_log.sh"
+isac_log "test-hook" "should not appear"
+if [ ! -f "$LOG_TEST_DIR3/logs/hooks.log" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: CLAUDE_PROJECT_DIR未設定時はログが出ない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: CLAUDE_PROJECT_DIR未設定時もログが出てしまった"
+    FAILED=$((FAILED + 1))
+fi
+rm -rf "$LOG_TEST_DIR3"
+
+# テスト6: 複数のisac_log呼び出しでエントリが追加される
+LOG_TEST_DIR4=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR4"
+export CLAUDE_PROJECT_DIR="$SCRIPT_DIR"
+source "$HOOKS_DIR/_log.sh"
+isac_log "hook-a" "OK first"
+isac_log "hook-b" "SKIP reason=test"
+LINE_COUNT=$(wc -l < "$LOG_TEST_DIR4/logs/hooks.log" | tr -d ' ')
+assert_equals "2" "$LINE_COUNT" "複数のisac_log呼び出しでエントリが追加される"
+rm -rf "$LOG_TEST_DIR4"
+
+# テスト7: SKIP状態のログフォーマット検証
+LOG_TEST_DIR5=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR5"
+export CLAUDE_PROJECT_DIR="$SCRIPT_DIR"
+source "$HOOKS_DIR/_log.sh"
+isac_log "on-prompt" "SKIP reason=empty_query"
+if grep -qE '^\[.*\] \[on-prompt\] SKIP reason=empty_query$' "$LOG_TEST_DIR5/logs/hooks.log" 2>/dev/null; then
+    echo -e "${GREEN}✓ PASS${NC}: SKIP状態のログフォーマットが正しい"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: SKIP状態のログフォーマットが不正"
+    FAILED=$((FAILED + 1))
+fi
+rm -rf "$LOG_TEST_DIR5"
+
+# テスト8: logs/ ディレクトリが自動作成される
+LOG_TEST_DIR6=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR6"
+export CLAUDE_PROJECT_DIR="$SCRIPT_DIR"
+source "$HOOKS_DIR/_log.sh"
+isac_log "test" "OK"
+if [ -d "$LOG_TEST_DIR6/logs" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: logs/ディレクトリが自動作成される"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: logs/ディレクトリが自動作成されない"
+    FAILED=$((FAILED + 1))
+fi
+rm -rf "$LOG_TEST_DIR6"
+
+# 元の値を復元
+export ISAC_GLOBAL_DIR="${ORIG_ISAC_GLOBAL_DIR}"
+if [ -n "${ORIG_CLAUDE_PROJECT_DIR}" ]; then
+    export CLAUDE_PROJECT_DIR="${ORIG_CLAUDE_PROJECT_DIR}"
+else
+    unset CLAUDE_PROJECT_DIR
+fi
+
+echo ""
+
+# ========================================
 # on-session-start.sh のテスト
 # ========================================
 echo "----------------------------------------"

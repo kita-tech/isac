@@ -18,6 +18,7 @@ set -e
 ISAC_GLOBAL_DIR="${ISAC_GLOBAL_DIR:-$HOME/.isac}"
 MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_log.sh"
 
 # グローバル設定からMemory URLを取得
 if [ -z "${MEMORY_SERVICE_URL:-}" ] && [ -f "${ISAC_GLOBAL_DIR}/config.yaml" ]; then
@@ -122,5 +123,7 @@ else
     [ -n "${WARN_UPDATE}" ] && echo "${WARN_UPDATE}" || true
     [ -n "${WARN_PROJECT}" ] && echo "${WARN_PROJECT}" || true
 fi
+
+isac_log "on-session-start" "OK project=${PROJECT_ID:-none} memory=$MEMORY_STATUS update=$UPDATE_STATUS"
 
 exit 0

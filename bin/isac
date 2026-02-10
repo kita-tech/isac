@@ -156,6 +156,7 @@ cmd_install() {
     # ディレクトリ作成
     echo -e "${GREEN}[1/5] Creating ~/.isac/ directory...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}"
+    mkdir -p "${ISAC_GLOBAL_DIR}/logs"
     chmod 700 "${ISAC_GLOBAL_DIR}"
 
     # Hooks コピー

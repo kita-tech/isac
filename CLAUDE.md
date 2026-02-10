@@ -109,6 +109,7 @@ isac/
 │   └── isac               # メインCLI
 ├── .claude/               # Claude Code CLI 設定
 │   ├── hooks/
+│   │   ├── _log.sh                  # 共有ログ関数
 │   │   ├── on-session-start.sh  # セッション開始時の軽量ステータス表示
 │   │   ├── on-prompt.sh         # 記憶検索
 │   │   ├── on-stop.sh           # タスク完了時のAI分類プロンプト
@@ -130,6 +131,7 @@ isac/
 ~/.isac/                   # グローバル設定（isac install で作成）
 ├── config.yaml
 ├── hooks/
+├── logs/                  # Hooks実行ログ（ISAC開発時のみ記録）
 └── skills/
 ```
 
