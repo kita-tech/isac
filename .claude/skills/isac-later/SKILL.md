@@ -47,8 +47,8 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
 TASK_CONTENT="$1"  # 引数からタスク内容を取得
 
-# sensitive-filterでチェック
-FILTER_RESULT=$(echo "$TASK_CONTENT" | bash ~/.isac/hooks/sensitive-filter.sh 2>/dev/null)
+# sensitive-filterでチェック（プロジェクトルートからの相対パス）
+FILTER_RESULT=$(echo "$TASK_CONTENT" | bash .claude/hooks/sensitive-filter.sh 2>/dev/null)
 IS_SENSITIVE=$(echo "$FILTER_RESULT" | jq -r '.is_sensitive')
 
 if [ "$IS_SENSITIVE" = "true" ]; then
