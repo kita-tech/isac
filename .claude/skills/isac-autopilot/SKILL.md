@@ -579,3 +579,6 @@ Claude は Task tool を起動する前に、以下のように返答してく�
 - `/isac-pr-review` - PRレビュー（PRコメント投稿）
 - `/isac-review` - 設計レビュー
 - `/isac-decide` - 決定の記録
+- `/isac-memory` - 記憶の検索・管理
+- `/isac-save-memory` - AI分析による保存形式提案
+- `/isac-suggest` - 状況に応じたSkill提案
