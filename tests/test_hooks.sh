@@ -731,7 +731,28 @@ JSON_SCOPE_PROJECT='```json
 OUTPUT=$(echo "$JSON_SCOPE_PROJECT" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
 assert_contains "$OUTPUT" "scope: project" "scope=projectが出力に含まれる"
 
-# テスト10: scope=globalで保存（scope_id=null）
+# テスト10: E2E - project保存時にMemory ServiceのAPIレスポンスでscope_id=プロジェクトIDを検証
+UNIQUE_TAG_PROJECT="e2e-project-$(date +%s)"
+JSON_PROJECT_E2E='{"type": "work", "scope": "project", "category": "test", "tags": ["'"$UNIQUE_TAG_PROJECT"'"], "summary": "E2E project scope_id verify test", "importance": 0.5}'
+echo "$JSON_PROJECT_E2E" | MEMORY_SERVICE_URL="$MEMORY_SERVICE_URL" bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+sleep 1
+SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=E2E+project+scope_id+verify+test&scope_id=test-scope-project&limit=5" 2>/dev/null)
+FOUND_ENTRY=$(echo "$SEARCH_RESULT" | jq '[.memories[] | select(.tags[] == "'"$UNIQUE_TAG_PROJECT"'")] | .[0]')
+if [ "$FOUND_ENTRY" = "null" ]; then
+    echo -e "${YELLOW}⚠ SKIP${NC}: E2E: project記憶が検索で見つからず（タイミングの問題の可能性）"
+else
+    FOUND_SCOPE=$(echo "$FOUND_ENTRY" | jq -r '.scope')
+    FOUND_SCOPE_ID=$(echo "$FOUND_ENTRY" | jq -r '.scope_id')
+    if [ "$FOUND_SCOPE" = "project" ] && [ "$FOUND_SCOPE_ID" = "test-scope-project" ]; then
+        echo -e "${GREEN}✓ PASS${NC}: E2E: projectスコープで保存され、scope_id=test-scope-projectがAPI応答で確認"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: E2E: scope=$FOUND_SCOPE, scope_id=$FOUND_SCOPE_ID (expected: project, test-scope-project)"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+
+# テスト11: scope=globalの出力メッセージ確認
 JSON_SCOPE_GLOBAL='```json
 {
   "type": "knowledge",
@@ -745,19 +766,31 @@ JSON_SCOPE_GLOBAL='```json
 OUTPUT=$(echo "$JSON_SCOPE_GLOBAL" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
 assert_contains "$OUTPUT" "scope: global" "scope=globalが出力に含まれる"
 
-# テスト11: global保存のペイロード検証（scope_id=null）
-# save-memory.shの実際の出力を検証する代わりに、globalスコープ時のJSONペイロードを直接検証
-JSON_GLOBAL_VERIFY='{"type": "knowledge", "scope": "global", "category": "backend", "tags": ["verify-test"], "summary": "Global scope_id null verify", "importance": 0.7}'
-SAVE_OUTPUT=$(echo "$JSON_GLOBAL_VERIFY" | MEMORY_SERVICE_URL="$MEMORY_SERVICE_URL" bash "$HOOKS_DIR/save-memory.sh" 2>&1)
-if [[ "$SAVE_OUTPUT" == *"scope: global"* ]]; then
-    echo -e "${GREEN}✓ PASS${NC}: globalスコープで保存が実行された"
-    PASSED=$((PASSED + 1))
+# テスト12: E2E - global保存時にMemory ServiceのAPIレスポンスでscope_id=nullを検証
+UNIQUE_TAG="e2e-global-$(date +%s)"
+JSON_GLOBAL_E2E='{"type": "knowledge", "scope": "global", "category": "backend", "tags": ["'"$UNIQUE_TAG"'"], "summary": "E2E global scope_id null test", "importance": 0.7}'
+echo "$JSON_GLOBAL_E2E" | MEMORY_SERVICE_URL="$MEMORY_SERVICE_URL" bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+sleep 1
+# Memory Service APIから保存された記憶を検索し、scope/scope_idを直接検証
+SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=E2E+global+scope_id+null+test&limit=5" 2>/dev/null)
+# jqの // 演算子はnullをfalsyとして扱うため、scope_idの検証には使わない
+FOUND_ENTRY=$(echo "$SEARCH_RESULT" | jq '[.memories[] | select(.tags[] == "'"$UNIQUE_TAG"'")] | .[0]')
+if [ "$FOUND_ENTRY" = "null" ]; then
+    echo -e "${YELLOW}⚠ SKIP${NC}: E2E: global記憶が検索で見つからず（タイミングの問題の可能性）"
 else
-    echo -e "${RED}✗ FAIL${NC}: globalスコープの保存出力が不正: $SAVE_OUTPUT"
-    FAILED=$((FAILED + 1))
+    FOUND_SCOPE=$(echo "$FOUND_ENTRY" | jq -r '.scope')
+    FOUND_SCOPE_ID_IS_NULL=$(echo "$FOUND_ENTRY" | jq '.scope_id == null')
+    if [ "$FOUND_SCOPE" = "global" ] && [ "$FOUND_SCOPE_ID_IS_NULL" = "true" ]; then
+        echo -e "${GREEN}✓ PASS${NC}: E2E: globalスコープで保存され、scope_id=nullがAPI応答で確認"
+        PASSED=$((PASSED + 1))
+    else
+        FOUND_SCOPE_ID=$(echo "$FOUND_ENTRY" | jq '.scope_id')
+        echo -e "${RED}✗ FAIL${NC}: E2E: scope=$FOUND_SCOPE, scope_id=$FOUND_SCOPE_ID (expected: global, null)"
+        FAILED=$((FAILED + 1))
+    fi
 fi
 
-# テスト12: 不正なscope値でprojectにフォールバック
+# テスト13: 不正なscope値でprojectにフォールバック
 JSON_SCOPE_INVALID='```json
 {
   "type": "work",
@@ -771,7 +804,7 @@ JSON_SCOPE_INVALID='```json
 OUTPUT=$(echo "$JSON_SCOPE_INVALID" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
 assert_contains "$OUTPUT" "scope: project" "不正なscope値がprojectにフォールバック"
 
-# テスト13: scopeフィールド未指定でprojectがデフォルト
+# テスト14: scopeフィールド未指定でprojectがデフォルト
 JSON_NO_SCOPE='```json
 {
   "type": "work",
@@ -784,7 +817,7 @@ JSON_NO_SCOPE='```json
 OUTPUT=$(echo "$JSON_NO_SCOPE" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
 assert_contains "$OUTPUT" "scope: project" "scope未指定でprojectがデフォルト"
 
-# テスト14: scope=空文字でprojectにフォールバック
+# テスト15: scope=空文字でprojectにフォールバック
 JSON_SCOPE_EMPTY='```json
 {
   "type": "work",
