@@ -45,7 +45,9 @@ MCPツール `mcp__notion__*` を使用してページ内容を取得します�
 | 7 | UXデザイナー | UX担当 | ユーザー体験、導線、アクセシビリティ |
 | 8 | QAエンジニア | 品質担当 | テスト容易性、品質基準 |
 | 9 | データエンジニア | データ担当 | データフロー、分析基盤 |
-| 10 | 新人エンジニア | フレッシュな視点 | 学習コスト、ドキュメント |
+| 10 | 懐疑的レビュアー | 批判的検証者 | 要件との乖離、過剰設計、見落とされたリスク、より単純な代替案の有無 |
+
+> **必須ルール**: 懐疑的レビュアーは常に含めること（ペルソナ数に関わらず最低1人）。`--quick`（3人）の場合でも、1人は懐疑的レビュアーとする。
 
 ### 3. 議論フォーマット
 
@@ -104,7 +106,53 @@ MCPツール `mcp__notion__*` を使用してページ内容を取得します�
 
 「この設計をMemory Serviceに記録しますか？」
 
-**Yes の場合**、Memory Service に保存します。
+**Yes の場合**、以下の形式で Memory Service に保存：
+
+```bash
+PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
+
+# Memory Service 接続確認（3秒タイムアウト）
+if ! curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
+    echo "❌ Memory Service に接続できません（$MEMORY_URL）"
+    echo ""
+    echo "確認事項:"
+    echo "  - Docker が起動しているか: docker ps"
+    echo "  - Memory Service が起動しているか: docker compose -f memory-service/docker-compose.yml up -d"
+    echo ""
+    echo "Memory Service を起動してから再実行してください。"
+    exit 1
+fi
+
+RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg content "【設計】[システム名]の設計完了\n【概要】[設計の要点]\n【検討過程】10人のペルソナでレビュー実施。[簡潔な経緯]" \
+    --argjson importance 0.8 \
+    --arg scope_id "$PROJECT_ID" \
+    --arg category "architecture" \
+    '{
+      content: $content,
+      type: "decision",
+      importance: $importance,
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: {
+        category: $category,
+        review_type: "notion_design",
+        participants: 10
+      }
+    }')")
+
+# 保存結果の確認
+if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+    echo "✅ 設計を記録しました (ID: $MEMORY_ID)"
+else
+    echo "❌ 設計の記録に失敗しました"
+    echo "$RESPONSE"
+fi
+```
 
 ## オプション
 
@@ -147,5 +195,8 @@ MCPツール `mcp__notion__*` を使用してページ内容を取得します�
 ## 関連スキル
 
 - `/isac-review` - 設計レビュー（Notionなしで議論）
+- `/isac-autopilot` - 設計→実装→テスト→レビュー→Draft PR作成を自動実行
 - `/isac-decide` - 決定の記録
 - `/isac-memory` - 記憶の検索・管理
+- `/isac-save-memory` - AI分析による保存形式提案
+- `/isac-suggest` - 状況に応じたSkill提案
