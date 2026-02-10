@@ -24,16 +24,32 @@ description: 現在の状況を分析し、適切なSkillを提案します。
 ```bash
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "default")
 USER_EMAIL=$(git config user.email || echo "${USER:-unknown}")
-API_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending"
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-# 直接パイプで処理（変数代入時の制御文字問題を回避）
-COUNT=$(curl -s "$API_URL" | jq -r '.count')
+# Memory Service 接続確認（3秒タイムアウト）
+MEMORY_CONNECTED=false
+if curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
+    MEMORY_CONNECTED=true
+fi
 
-if [ "$COUNT" -gt 0 ]; then
-    echo "## 📋 未完了タスク（${COUNT}件）"
+if [ "$MEMORY_CONNECTED" = false ]; then
+    echo "⚠️ Memory Service に接続できません（$MEMORY_URL）— 未完了タスクの取得をスキップします"
     echo ""
-    curl -s "$API_URL" | jq -r '.todos | to_entries | .[] | "\(.key + 1). [ ] \(.value.content | split("\n")[0] | .[0:60])"'
-    echo ""
+    # 接続失敗でもスキル提案は続行する
+fi
+
+# 接続成功時のみタスク取得
+if [ "$MEMORY_CONNECTED" = true ]; then
+    RESULT=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending")
+    COUNT=$(echo "$RESULT" | jq -r '.count')
+
+    # COUNT が数値かつ1件以上の場合のみ表示
+    if [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ]; then
+        echo "## 📋 未完了タスク（${COUNT}件）"
+        echo ""
+        echo "$RESULT" | jq -r '.todos | to_entries | .[] | "\(.key + 1). [ ] \(.value.content | split("\n")[0] | .[0:60])"'
+        echo ""
+    fi
 fi
 ```
 
@@ -82,6 +98,46 @@ fi
 - プロジェクトの経緯を知りたい
 
 **キーワード例**: 前に、以前、過去、履歴、経緯、なぜ
+
+### /isac-autopilot を提案する場合
+
+- 要件が明確で、設計から実装・テスト・PRまで一気に進めたい
+- 手動の介入を最小限にしたい
+- 中規模の機能追加やバグ修正
+
+**キーワード例**: 自動で、一気に、実装して、PR作って、autopilot
+
+### /isac-pr-review を提案する場合
+
+- GitHub上のPRに対してレビューコメントを投稿したい
+- PRのURLが提示されている
+- チームメンバーのPRをレビューしたい
+
+**キーワード例**: PR #XX、プルリクエスト、レビューして、PRレビュー
+
+### /isac-save-memory を提案する場合
+
+- タスクが完了した直後
+- 重要な作業内容を記録として残したい
+- 学んだことや発見を保存したい
+
+**キーワード例**: 完了、保存、記録、覚えておいて、メモ
+
+### /isac-notion-design を提案する場合
+
+- Notionに設計ドキュメントや概要がある
+- Notionのページから詳細設計を起こしたい
+- Notion上の仕様をもとに実装方針を検討したい
+
+**キーワード例**: Notion、設計書、概要から、ページ、仕様
+
+### /isac-todo を提案する場合
+
+- やることリストの管理
+- タスクの追加・確認・完了
+- 「後でやる」ことの記録
+
+**キーワード例**: タスク、TODO、やること、後で、リスト
 
 ## 出力フォーマット
 
@@ -207,12 +263,16 @@ fi
 
 | Skill | 用途 |
 |-------|------|
-| /isac-todo | 個人タスク管理（add/list/done） |
+| /isac-autopilot | 設計→実装→テスト→レビュー→Draft PR作成を自動実行 |
+| /isac-todo | 個人タスク管理（add/list/done/clear） |
 | /isac-later | 「後でやる」タスクを素早く記録 |
 | /isac-memory | 記憶の検索・管理 |
 | /isac-decide | 決定の記録 |
 | /isac-review | 設計レビュー（ペルソナ議論） |
 | /isac-code-review | コードレビュー（品質チェック） |
+| /isac-pr-review | GitHub PRレビュー（PRコメント投稿） |
+| /isac-save-memory | AI分析による保存形式提案 |
+| /isac-notion-design | Notionの概要から設計を実行 |
 | /isac-suggest | Skill提案（このSkill） |
 ```
 
@@ -237,9 +297,13 @@ fi
 
 ## 関連スキル
 
-- `/isac-todo` - 個人タスク管理
+- `/isac-autopilot` - 設計→実装→テスト→レビュー→Draft PR作成を自動実行
+- `/isac-todo` - 個人タスク管理（add/list/done/clear）
 - `/isac-later` - 「後でやる」タスクを素早く記録
 - `/isac-memory` - 記憶の検索・管理
 - `/isac-decide` - 決定の記録
 - `/isac-review` - 設計レビュー
 - `/isac-code-review` - コードレビュー
+- `/isac-pr-review` - GitHub PRレビュー
+- `/isac-save-memory` - AI分析による保存形式提案
+- `/isac-notion-design` - Notionの概要から設計を実行

@@ -237,5 +237,8 @@ EOF
 
 - `/isac-code-review` - ローカルファイルのコードレビュー
 - `/isac-review` - 設計レビュー（方針・アーキテクチャの検討）
+- `/isac-autopilot` - 設計→実装→テスト→レビュー→Draft PR作成を自動実行
 - `/isac-decide` - 決定の記録
 - `/isac-memory` - 記憶の検索・管理
+- `/isac-save-memory` - AI分析による保存形式提案
+- `/isac-suggest` - 状況に応じたSkill提案

@@ -24,26 +24,63 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 - 設計パターンの採用
 - 重要なルールの策定
 
+## Memory Service 接続確認
+
+決定の記録・検索の前に、Memory Service の接続を確認する。
+
+```bash
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
+
+# 接続確認（3秒タイムアウト）
+if ! curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
+    echo "❌ Memory Service に接続できません（$MEMORY_URL）"
+    echo ""
+    echo "確認事項:"
+    echo "  - Docker が起動しているか: docker ps"
+    echo "  - Memory Service が起動しているか: docker compose -f memory-service/docker-compose.yml up -d"
+    echo ""
+    echo "Memory Service を起動してから再実行してください。"
+    exit 1
+fi
+```
+
 ## 決定の記録
 
 重要な決定を記録する際は、以下の形式で Memory Service に保存してください:
 
 ```bash
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
+# Memory Service 接続確認（上記「Memory Service 接続確認」セクション参照）
+
+RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
   -H "Content-Type: application/json" \
-  -d '{
-    "content": "【決定内容】認証にはJWTを採用する\n【理由】ステートレスでスケーラブル、マイクロサービスに適している\n【代替案】セッションベース認証 - サーバー側の状態管理が必要なため不採用",
-    "type": "decision",
-    "importance": 0.8,
-    "scope": "project",
-    "scope_id": "'"$PROJECT_ID"'",
-    "metadata": {
-      "category": "authentication",
-      "decision": "JWT採用"
-    }
-  }'
+  -d "$(jq -n \
+    --arg content "【決定内容】認証にはJWTを採用する\n【理由】ステートレスでスケーラブル、マイクロサービスに適している\n【代替案】セッションベース認証 - サーバー側の状態管理が必要なため不採用" \
+    --arg scope_id "$PROJECT_ID" \
+    --arg category "authentication" \
+    --arg decision "JWT採用" \
+    '{
+      content: $content,
+      type: "decision",
+      importance: 0.8,
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: {
+        category: $category,
+        decision: $decision
+      }
+    }')")
+
+# 保存結果の確認
+if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+    echo "✅ 決定を記録しました (ID: $MEMORY_ID)"
+else
+    echo "❌ 決定の記録に失敗しました"
+    echo "$RESPONSE"
+fi
 ```
 
 ### グローバル決定（全プロジェクト共有）
@@ -51,17 +88,33 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 組織全体に影響する決定は`scope: global`で保存:
 
 ```bash
-curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
+
+# Memory Service 接続確認（上記「Memory Service 接続確認」セクション参照）
+
+RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
   -H "Content-Type: application/json" \
-  -d '{
-    "content": "【決定内容】全プロジェクトでPython 3.11以上を使用する",
-    "type": "decision",
-    "importance": 0.9,
-    "scope": "global",
-    "metadata": {
-      "category": "technology-stack"
-    }
-  }'
+  -d "$(jq -n \
+    --arg content "【決定内容】全プロジェクトでPython 3.11以上を使用する" \
+    --arg category "technology-stack" \
+    '{
+      content: $content,
+      type: "decision",
+      importance: 0.9,
+      scope: "global",
+      metadata: {
+        category: $category
+      }
+    }')")
+
+# 保存結果の確認
+if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+    echo "✅ グローバル決定を記録しました (ID: $MEMORY_ID)"
+else
+    echo "❌ 決定の記録に失敗しました"
+    echo "$RESPONSE"
+fi
 ```
 
 ## 重要度の目安
@@ -79,12 +132,71 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 
 ```bash
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/search" \
+# Memory Service 接続確認（上記「Memory Service 接続確認」セクション参照）
+
+RESULT=$(curl -s --get "$MEMORY_URL/search" \
   --data-urlencode "query=認証" \
   --data-urlencode "type=decision" \
   --data-urlencode "scope=project" \
-  --data-urlencode "scope_id=$PROJECT_ID"
+  --data-urlencode "scope_id=$PROJECT_ID")
+COUNT=$(echo "$RESULT" | jq -r '.memories | length')
+
+if [ "$COUNT" = "0" ] || [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
+    echo "該当する決定は見つかりませんでした。"
+else
+    echo "## 📋 決定一覧（${COUNT}件）"
+    echo ""
+    echo "$RESULT" | jq -r '.memories | to_entries | .[] | "\(.key + 1). \(.value.content | split("\n")[0] | .[0:80]) (ID: \(.value.id))"'
+fi
+```
+
+## 出力フォーマット
+
+### 決定記録 成功時
+
+```
+✅ 決定を記録しました (ID: abc123)
+```
+
+### グローバル決定記録 成功時
+
+```
+✅ グローバル決定を記録しました (ID: abc123)
+```
+
+### 記録失敗時
+
+```
+❌ 決定の記録に失敗しました
+```
+
+### 検索結果
+
+```
+## 📋 決定一覧（2件）
+
+1. 【決定内容】認証にはJWTを採用する (ID: abc123)
+2. 【決定内容】セッション有効期限は15分 (ID: def456)
+```
+
+### 検索結果なし
+
+```
+該当する決定は見つかりませんでした。
+```
+
+### Memory Service 未接続時
+
+```
+❌ Memory Service に接続できません（http://localhost:8100）
+
+確認事項:
+  - Docker が起動しているか: docker ps
+  - Memory Service が起動しているか: docker compose -f memory-service/docker-compose.yml up -d
+
+Memory Service を起動してから再実行してください。
 ```
 
 ## 関連スキル
@@ -92,4 +204,6 @@ curl --get "${MEMORY_SERVICE_URL:-http://localhost:8100}/search" \
 - `/isac-memory` - 記憶の検索・管理
 - `/isac-review` - 設計レビュー（方針・アーキテクチャの検討）
 - `/isac-code-review` - コードレビュー（実装の品質チェック）
+- `/isac-autopilot` - 設計→実装→テスト→レビュー→Draft PR作成を自動実行
+- `/isac-save-memory` - AI分析による保存形式提案
 - `/isac-suggest` - 状況に応じたSkill提案
