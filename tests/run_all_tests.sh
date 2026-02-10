@@ -104,6 +104,12 @@ MEMORY_URL="http://localhost:${TEST_PORT}"
 export MEMORY_SERVICE_URL="$MEMORY_URL"
 export ISAC_TEST_URL="$MEMORY_URL"
 
+# 前回のテストコンテナが残っている場合はクリーンアップ
+if docker compose -p "$TEST_PROJECT_NAME" -f "$PROJECT_DIR/memory-service/docker-compose.test.yml" ps -q 2>/dev/null | grep -q .; then
+    echo -e "${YELLOW}前回のテスト用コンテナを削除中...${NC}"
+    docker compose -p "$TEST_PROJECT_NAME" -f "$PROJECT_DIR/memory-service/docker-compose.test.yml" down -v 2>/dev/null
+fi
+
 # テスト用コンテナの起動（-p でプロジェクト名を分離し、通常運用コンテナに影響しない）
 echo -e "${YELLOW}テスト用 Memory Service コンテナを起動中 (ポート: ${TEST_PORT})...${NC}"
 docker compose -p "$TEST_PROJECT_NAME" -f "$PROJECT_DIR/memory-service/docker-compose.test.yml" up -d --build 2>&1 | while read -r line; do
