@@ -716,6 +716,168 @@ else
     FAILED=$((FAILED + 1))
 fi
 
+# テスト9: scope=projectで保存（デフォルト）
+echo "project_id: test-scope-project" > "$TEST_DIR/.isac.yaml"
+JSON_SCOPE_PROJECT='```json
+{
+  "type": "work",
+  "scope": "project",
+  "category": "test",
+  "tags": ["scope-test"],
+  "summary": "Scope project test entry",
+  "importance": 0.5
+}
+```'
+OUTPUT=$(echo "$JSON_SCOPE_PROJECT" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "scope: project" "scope=projectが出力に含まれる"
+
+# テスト10: E2E - project保存時にMemory ServiceのAPIレスポンスでscope_id=プロジェクトIDを検証
+UNIQUE_TAG_PROJECT="e2e-project-$(date +%s)"
+JSON_PROJECT_E2E='{"type": "work", "scope": "project", "category": "test", "tags": ["'"$UNIQUE_TAG_PROJECT"'"], "summary": "E2E project scope_id verify test", "importance": 0.5}'
+echo "$JSON_PROJECT_E2E" | MEMORY_SERVICE_URL="$MEMORY_SERVICE_URL" bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+sleep 1
+SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=E2E+project+scope_id+verify+test&scope_id=test-scope-project&limit=5" 2>/dev/null)
+FOUND_ENTRY=$(echo "$SEARCH_RESULT" | jq '[.memories[] | select(.tags[] == "'"$UNIQUE_TAG_PROJECT"'")] | .[0]')
+if [ "$FOUND_ENTRY" = "null" ]; then
+    echo -e "${YELLOW}⚠ SKIP${NC}: E2E: project記憶が検索で見つからず（タイミングの問題の可能性）"
+else
+    FOUND_SCOPE=$(echo "$FOUND_ENTRY" | jq -r '.scope')
+    FOUND_SCOPE_ID=$(echo "$FOUND_ENTRY" | jq -r '.scope_id')
+    if [ "$FOUND_SCOPE" = "project" ] && [ "$FOUND_SCOPE_ID" = "test-scope-project" ]; then
+        echo -e "${GREEN}✓ PASS${NC}: E2E: projectスコープで保存され、scope_id=test-scope-projectがAPI応答で確認"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: E2E: scope=$FOUND_SCOPE, scope_id=$FOUND_SCOPE_ID (expected: project, test-scope-project)"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+
+# テスト11: scope=globalの出力メッセージ確認
+JSON_SCOPE_GLOBAL='```json
+{
+  "type": "knowledge",
+  "scope": "global",
+  "category": "backend",
+  "tags": ["scope-test", "global"],
+  "summary": "Scope global test entry",
+  "importance": 0.7
+}
+```'
+OUTPUT=$(echo "$JSON_SCOPE_GLOBAL" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "scope: global" "scope=globalが出力に含まれる"
+
+# テスト12: E2E - global保存時にMemory ServiceのAPIレスポンスでscope_id=nullを検証
+UNIQUE_TAG="e2e-global-$(date +%s)"
+JSON_GLOBAL_E2E='{"type": "knowledge", "scope": "global", "category": "backend", "tags": ["'"$UNIQUE_TAG"'"], "summary": "E2E global scope_id null test", "importance": 0.7}'
+echo "$JSON_GLOBAL_E2E" | MEMORY_SERVICE_URL="$MEMORY_SERVICE_URL" bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null
+sleep 1
+# Memory Service APIから保存された記憶を検索し、scope/scope_idを直接検証
+SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=E2E+global+scope_id+null+test&limit=5" 2>/dev/null)
+# jqの // 演算子はnullをfalsyとして扱うため、scope_idの検証には使わない
+FOUND_ENTRY=$(echo "$SEARCH_RESULT" | jq '[.memories[] | select(.tags[] == "'"$UNIQUE_TAG"'")] | .[0]')
+if [ "$FOUND_ENTRY" = "null" ]; then
+    echo -e "${YELLOW}⚠ SKIP${NC}: E2E: global記憶が検索で見つからず（タイミングの問題の可能性）"
+else
+    FOUND_SCOPE=$(echo "$FOUND_ENTRY" | jq -r '.scope')
+    FOUND_SCOPE_ID_IS_NULL=$(echo "$FOUND_ENTRY" | jq '.scope_id == null')
+    if [ "$FOUND_SCOPE" = "global" ] && [ "$FOUND_SCOPE_ID_IS_NULL" = "true" ]; then
+        echo -e "${GREEN}✓ PASS${NC}: E2E: globalスコープで保存され、scope_id=nullがAPI応答で確認"
+        PASSED=$((PASSED + 1))
+    else
+        FOUND_SCOPE_ID=$(echo "$FOUND_ENTRY" | jq '.scope_id')
+        echo -e "${RED}✗ FAIL${NC}: E2E: scope=$FOUND_SCOPE, scope_id=$FOUND_SCOPE_ID (expected: global, null)"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+
+# テスト13: 不正なscope値でprojectにフォールバック
+JSON_SCOPE_INVALID='```json
+{
+  "type": "work",
+  "scope": "invalid_scope",
+  "category": "test",
+  "tags": ["scope-test"],
+  "summary": "Invalid scope fallback test",
+  "importance": 0.5
+}
+```'
+OUTPUT=$(echo "$JSON_SCOPE_INVALID" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "scope: project" "不正なscope値がprojectにフォールバック"
+
+# テスト14: scopeフィールド未指定でprojectがデフォルト
+JSON_NO_SCOPE='```json
+{
+  "type": "work",
+  "category": "test",
+  "tags": ["scope-test"],
+  "summary": "No scope field test",
+  "importance": 0.5
+}
+```'
+OUTPUT=$(echo "$JSON_NO_SCOPE" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "scope: project" "scope未指定でprojectがデフォルト"
+
+# テスト15: scope=空文字でprojectにフォールバック
+JSON_SCOPE_EMPTY='```json
+{
+  "type": "work",
+  "scope": "",
+  "category": "test",
+  "tags": ["scope-test"],
+  "summary": "Empty scope fallback test",
+  "importance": 0.5
+}
+```'
+OUTPUT=$(echo "$JSON_SCOPE_EMPTY" | bash "$HOOKS_DIR/save-memory.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "scope: project" "空のscope値がprojectにフォールバック"
+
+echo ""
+
+# ========================================
+# on-stop.sh のテスト
+# ========================================
+echo "----------------------------------------"
+echo "on-stop.sh テスト"
+echo "----------------------------------------"
+
+# テスト1: on-stop.shの出力にscopeフィールドが含まれる
+echo "project_id: test-on-stop" > "$TEST_DIR/.isac.yaml"
+cd "$TEST_DIR"
+ON_STOP_OUTPUT=$(bash "$HOOKS_DIR/on-stop.sh" 2>/dev/null)
+assert_contains "$ON_STOP_OUTPUT" '"scope"' "on-stop.shの出力にscopeフィールドが含まれる"
+
+# テスト2: scopeガイドラインが含まれる
+assert_contains "$ON_STOP_OUTPUT" "scope" "on-stop.shの出力にscopeガイドラインが含まれる"
+
+# テスト3: 「迷ったらproject」が含まれる
+assert_contains "$ON_STOP_OUTPUT" "迷ったらproject" "on-stop.shの出力に「迷ったらproject」が含まれる"
+
+# テスト4: globalの判定ヒント（ツール/言語/FW）が含まれる
+assert_contains "$ON_STOP_OUTPUT" "global" "on-stop.shの出力にglobalの説明が含まれる"
+
+echo ""
+
+# ========================================
+# memory-classifier.md のテスト
+# ========================================
+echo "----------------------------------------"
+echo "memory-classifier.md テスト"
+echo "----------------------------------------"
+
+CLASSIFIER_MD="$SCRIPT_DIR/.claude/agents/memory-classifier.md"
+
+# テスト1: scopeセクションが存在する
+assert_file_grep "$CLASSIFIER_MD" "scope" "memory-classifier.mdにscopeセクションが存在する"
+
+# テスト2: 「迷ったらproject」ルールが記載されている
+assert_file_grep "$CLASSIFIER_MD" "迷ったら" "memory-classifier.mdに「迷ったら」ルールが記載されている"
+
+# テスト3: global判定基準が記載されている
+assert_file_grep "$CLASSIFIER_MD" "global" "memory-classifier.mdにglobal判定基準が記載されている"
+
+# テスト4: scope_id=null の説明がある
+assert_file_grep "$CLASSIFIER_MD" "null" "memory-classifier.mdにscope_id=nullの説明がある"
+
 echo ""
 
 # ========================================

@@ -60,10 +60,16 @@ fi
 
 # 各フィールドを抽出
 TYPE=$(echo "$JSON_CONTENT" | jq -r '.type // "work"' 2>/dev/null || echo "work")
+SCOPE=$(echo "$JSON_CONTENT" | jq -r '.scope // "project"' 2>/dev/null || echo "project")
 CATEGORY=$(echo "$JSON_CONTENT" | jq -r '.category // "other"' 2>/dev/null || echo "other")
 TAGS=$(echo "$JSON_CONTENT" | jq -c '.tags // []' 2>/dev/null || echo "[]")
 SUMMARY=$(echo "$JSON_CONTENT" | jq -r '.summary // ""' 2>/dev/null || echo "")
 IMPORTANCE=$(echo "$JSON_CONTENT" | jq -r '.importance // 0.5' 2>/dev/null || echo "0.5")
+
+# scopeバリデーション（project/global以外はprojectにフォールバック）
+if [ "$SCOPE" != "project" ] && [ "$SCOPE" != "global" ]; then
+    SCOPE="project"
+fi
 
 # サマリが空の場合はスキップ
 if [ -z "$SUMMARY" ]; then
@@ -76,32 +82,59 @@ if ! echo "$IMPORTANCE" | grep -qE '^[0-9]*\.?[0-9]+$'; then
 fi
 
 # Memory Serviceに保存（jqで安全にJSONを構築）
-PAYLOAD=$(jq -n \
-    --arg content "$SUMMARY" \
-    --arg type "$TYPE" \
-    --argjson importance "$IMPORTANCE" \
-    --arg scope_id "$PROJECT_ID" \
-    --arg category "$CATEGORY" \
-    --argjson tags "$TAGS" \
-    --arg user "$USER_ID" \
-    --arg team_id "$TEAM_ID" \
-    '{
-        content: $content,
-        type: $type,
-        importance: $importance,
-        scope: "project",
-        scope_id: $scope_id,
-        category: $category,
-        tags: $tags,
-        metadata: {
-            source: "ai-classification",
-            user: $user,
-            team_id: $team_id
-        }
-    }')
+if [ "$SCOPE" = "global" ]; then
+    PAYLOAD=$(jq -n \
+        --arg content "$SUMMARY" \
+        --arg type "$TYPE" \
+        --argjson importance "$IMPORTANCE" \
+        --arg scope "global" \
+        --arg category "$CATEGORY" \
+        --argjson tags "$TAGS" \
+        --arg user "$USER_ID" \
+        --arg team_id "$TEAM_ID" \
+        '{
+            content: $content,
+            type: $type,
+            importance: $importance,
+            scope: $scope,
+            scope_id: null,
+            category: $category,
+            tags: $tags,
+            metadata: {
+                source: "ai-classification",
+                user: $user,
+                team_id: $team_id
+            }
+        }')
+else
+    PAYLOAD=$(jq -n \
+        --arg content "$SUMMARY" \
+        --arg type "$TYPE" \
+        --argjson importance "$IMPORTANCE" \
+        --arg scope "project" \
+        --arg scope_id "$PROJECT_ID" \
+        --arg category "$CATEGORY" \
+        --argjson tags "$TAGS" \
+        --arg user "$USER_ID" \
+        --arg team_id "$TEAM_ID" \
+        '{
+            content: $content,
+            type: $type,
+            importance: $importance,
+            scope: $scope,
+            scope_id: $scope_id,
+            category: $category,
+            tags: $tags,
+            metadata: {
+                source: "ai-classification",
+                user: $user,
+                team_id: $team_id
+            }
+        }')
+fi
 
 curl -s --max-time 5 -X POST "$MEMORY_URL/store" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" > /dev/null 2>&1 || true
 
-echo "[ISAC] Memory saved: $SUMMARY (category: $CATEGORY)"
+echo "[ISAC] Memory saved: $SUMMARY (scope: $SCOPE, category: $CATEGORY)"

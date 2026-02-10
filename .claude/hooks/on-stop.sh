@@ -60,6 +60,7 @@ cat << 'PROMPT_EOF'
 {
   "skip": false,
   "type": "work|decision|knowledge",
+  "scope": "project|global",
   "category": "backend|frontend|infra|security|database|api|ui|test|docs|architecture|other",
   "tags": ["タグ1", "タグ2"],
   "summary": "作業内容の1行要約（50文字以内）",
@@ -73,6 +74,11 @@ cat << 'PROMPT_EOF'
 - decision: 技術選定、設計方針、アーキテクチャ決定など重要な判断
 - work: 実装作業、バグ修正、リファクタリングなど日常的な作業
 - knowledge: 学習した知見、ベストプラクティス、チームで共有すべき情報
+
+■ scope（スコープ - 迷ったらprojectを選択）:
+- project: このプロジェクト固有の知見（デフォルト）。プロジェクト名や固有の設計判断が主語の場合
+- global: 他プロジェクトでも参照すべき汎用的な技術知見。ツール/言語/フレームワークの仕様・制約・ベストプラクティスが主語の場合
+  例: 「FastAPIではasyncが推奨」「jqでJSON構築するとインジェクション防止になる」「pickleはRCEリスクがあるのでJSONを使う」
 
 ■ PRレビュー作業の分類ルール:
 - /isac-pr-review や /isac-code-review の実施記録 → type: work
