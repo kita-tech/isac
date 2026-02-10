@@ -612,131 +612,50 @@ setup_mcp_servers() {
         context7 -- npx -y @upstash/context7-mcp
 }
 
-# settings.yaml を新規作成
-create_settings_yaml() {
-    local settings_file=".claude/settings.yaml"
+# settings.json を新規作成（Claude Code CLI 公式形式）
+create_settings_json() {
+    local settings_file=".claude/settings.json"
 
-    cat > "${settings_file}" << 'SETTINGS_EOF'
-# ============================================================================
-# ISAC Project Settings for Claude Code CLI
-# ============================================================================
-#
-# 【このファイルは何？】
-# Claude Code CLI（claudeコマンド）の設定ファイルです。
-# ISACの機能（記憶管理、決定事項の保存など）を有効にするための設定が
-# 記述されています。
-#
-# 【MCP サーバーについて】
-# MCP サーバー（notion, context7）は `claude mcp add --scope user` で
-# 登録されます（~/.claude.json に保存）。
-# `isac init` 実行時に自動登録されますが、手動で登録する場合：
-#
-#   claude mcp add --scope user \
-#     -e 'OPENAPI_MCP_HEADERS={"Authorization": "Bearer $NOTION_API_TOKEN", "Notion-Version": "2022-06-28"}' \
-#     notion -- npx -y @notionhq/notion-mcp-server
-#
-#   claude mcp add --scope user \
-#     -e DEFAULT_MINIMUM_TOKENS=10000 \
-#     -e CONTEXT7_API_KEY=$CONTEXT7_API_KEY \
-#     context7 -- npx -y @upstash/context7-mcp
-#
-# 【ISACとの連携の仕組み】
-# このプロジェクトは、グローバル設定（~/.isac/）を継承しています。
-#
-#   ~/.isac/                    ← グローバル設定（全プロジェクト共通）
-#   ├── hooks/                  ← 自動実行されるスクリプト
-#   │   ├── on-prompt.sh       ← プロンプト入力時に記憶を検索
-#   │   ├── post-edit.sh       ← ファイル編集後に作業履歴を保存
-#   │   └── ...
-#   └── skills/                 ← スラッシュコマンド定義（ディレクトリ構造）
-#       ├── isac-memory/
-#       │   └── SKILL.md       ← /isac-memory コマンド
-#       ├── isac-decide/
-#       │   └── SKILL.md       ← /isac-decide コマンド
-#       └── ...
-#
-#   .claude/                    ← このプロジェクト固有の設定
-#   ├── settings.yaml          ← このファイル
-#   ├── hooks/                  ← グローバルへのシンボリックリンク
-#   └── skills/                 ← グローバルへのシンボリックリンク
-#
-# 【シンボリックリンクとは？】
-# ファイルやフォルダへの「ショートカット」のようなものです。
-# .claude/hooks/ の中身は実際には ~/.isac/hooks/ を参照しています。
-# これにより：
-#   - グローバル設定を更新すると、全プロジェクトに自動反映
-#   - プロジェクトごとに個別のファイルを追加することも可能
-#
-# 【カスタマイズ方法】
-#
-# 1. プロジェクト固有のHookを追加したい場合：
-#    .claude/hooks/ に新しいスクリプトを作成してください。
-#    （シンボリックリンクではなく、実ファイルとして作成）
-#
-#    例: .claude/hooks/my-custom-hook.sh
-#
-# 2. 特定のHookを無効化したい場合：
-#    このファイルで hooks セクションを定義し、必要なものだけ指定します。
-#
-# 3. グローバル設定を使わない場合：
-#    hooks/ と skills/ のシンボリックリンクを削除し、
-#    このファイルで直接パスを指定するか、独自のスクリプトを配置します。
-#
+    jq -n '{
+        hooks: {
+            SessionStart: [
+                {
+                    hooks: [
+                        {
+                            type: "command",
+                            command: "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/on-session-start.sh",
+                            timeout: 5
+                        }
+                    ]
+                }
+            ],
+            UserPromptSubmit: [
+                {
+                    hooks: [
+                        {
+                            type: "command",
+                            command: "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/on-prompt.sh",
+                            timeout: 10
+                        }
+                    ]
+                }
+            ],
+            PostToolUse: [
+                {
+                    matcher: "Edit|Write",
+                    hooks: [
+                        {
+                            type: "command",
+                            command: "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit.sh",
+                            timeout: 5
+                        }
+                    ]
+                }
+            ]
+        }
+    }' > "${settings_file}"
 
-# ============================================================================
-# 設定セクション
-# ============================================================================
-
-# Hooks と Skills はシンボリックリンクで継承しているため、追加設定は不要です。
-#
-# プロジェクト固有の設定を追加する場合は、以下のようにコメントを外して
-# 必要な設定を追加してください：
-#
-# hooks:
-#   # プロンプト入力時に実行されるHook
-#   prompt:
-#     - .claude/hooks/my-prompt-hook.sh
-#
-#   # ファイル編集後に実行されるHook
-#   post_tool_use:
-#     Edit:
-#       - .claude/hooks/my-edit-hook.sh
-#     Write:
-#       - .claude/hooks/my-write-hook.sh
-
-# ============================================================================
-# よくある質問（FAQ）
-# ============================================================================
-#
-# Q: グローバル設定はどこにある？
-# A: ~/.isac/ ディレクトリです。`isac status` で確認できます。
-#
-# Q: Hookが動いているか確認したい
-# A: Claude Code CLI で何か質問すると、画面上部に「ISAC Context」という
-#    セクションが表示されれば、on-prompt.sh が動作しています。
-#
-# Q: 記憶が保存されない
-# A: Memory Service が起動しているか確認してください。
-#    `curl http://localhost:8100/health` で確認できます。
-#
-# Q: このファイルを削除したらどうなる？
-# A: ISACの機能（記憶管理など）が動作しなくなります。
-#    `isac init --force` で再作成できます。
-#
-# Q: チームメンバーと設定を共有したい
-# A: このファイルと .isac.yaml はGitにコミットしてOKです。
-#    ただし、hooks/ と skills/ のシンボリックリンクは各自の環境に
-#    依存するため、.gitignore に追加することを推奨します。
-#    各メンバーは `isac init --force` で自分の環境にリンクを再作成できます。
-#
-# Q: MCP サーバーはどこで管理される？
-# A: `claude mcp add --scope user` で ~/.claude.json に登録されます。
-#    `claude mcp list` で確認、`claude mcp remove <name>` で削除できます。
-#
-# ============================================================================
-SETTINGS_EOF
-
-    echo -e "  ${GREEN}✓${NC} Created .claude/settings.yaml"
+    echo -e "  ${GREEN}✓${NC} Created .claude/settings.json"
 }
 
 
@@ -751,13 +670,19 @@ setup_claude_directory() {
     mkdir -p .claude/hooks .claude/skills .claude/agents
 
     # ========================================
-    # settings.yaml の作成
+    # settings.json の作成
     # ========================================
-    if [ ! -f ".claude/settings.yaml" ] || [ "${force}" = true ]; then
-        create_settings_yaml
+    if [ ! -f ".claude/settings.json" ] || [ "${force}" = true ]; then
+        create_settings_json
     fi
 
-    echo -e "  ${GREEN}✓${NC} .claude/settings.yaml ready"
+    # 古い settings.yaml が残っている場合に警告
+    if [ -f ".claude/settings.yaml" ]; then
+        echo -e "  ${YELLOW}⚠${NC} .claude/settings.yaml is deprecated (Claude Code CLI uses settings.json)"
+        echo "     You can safely delete .claude/settings.yaml"
+    fi
+
+    echo -e "  ${GREEN}✓${NC} .claude/settings.json ready"
 
     # ========================================
     # シンボリックリンクの作成

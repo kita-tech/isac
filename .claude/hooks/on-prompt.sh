@@ -7,8 +7,9 @@
 
 set -e
 
-# 引数からクエリを取得
-QUERY="${1:-}"
+# stdin JSON から prompt を取得（公式 hooks 仕様）
+INPUT=$(cat)
+QUERY=$(echo "$INPUT" | jq -r '.prompt // ""' 2>/dev/null || echo "")
 
 # 環境変数
 ISAC_GLOBAL_DIR="${ISAC_GLOBAL_DIR:-$HOME/.isac}"

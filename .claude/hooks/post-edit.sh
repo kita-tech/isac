@@ -6,8 +6,9 @@
 
 set -e
 
-# 引数からファイルパスを取得
-FILE_PATH="${1:-}"
+# stdin JSON から file_path を取得（公式 hooks 仕様）
+INPUT=$(cat)
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null || echo "")
 
 # 環境変数
 ISAC_GLOBAL_DIR="${ISAC_GLOBAL_DIR:-$HOME/.isac}"
