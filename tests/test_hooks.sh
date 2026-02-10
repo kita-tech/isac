@@ -881,6 +881,108 @@ assert_file_grep "$CLASSIFIER_MD" "null" "memory-classifier.mdにscope_id=null�
 echo ""
 
 # ========================================
+# on-session-start.sh のテスト
+# ========================================
+echo "----------------------------------------"
+echo "on-session-start.sh テスト"
+echo "----------------------------------------"
+
+# テスト1: 正常時に1行サマリーを出力
+echo "project_id: test-session-start" > "$TEST_DIR/.isac.yaml"
+cd "$TEST_DIR"
+OUTPUT=$(bash "$HOOKS_DIR/on-session-start.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "ISAC:" "正常時にISACプレフィックス付きサマリーを出力"
+
+# テスト2: 正常時にプロジェクトIDが含まれる
+assert_contains "$OUTPUT" "test-session-start" "正常時にプロジェクトIDが含まれる"
+
+# テスト3: 正常時にMemory接続状態が含まれる
+assert_contains "$OUTPUT" "Memory" "正常時にMemory状態が含まれる"
+
+# テスト4: プロジェクト未設定時の警告表示
+rm "$TEST_DIR/.isac.yaml"
+# 親ディレクトリにも.isac.yamlがないことを確認するために、TEST_DIR自体で実行
+OUTPUT=$(cd "$TEST_DIR" && bash "$HOOKS_DIR/on-session-start.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "Project" "プロジェクト未設定時にProject警告が含まれる"
+
+# テスト5: スクリプトがエラーなく完了する（終了コード0）
+echo "project_id: test-session-exit" > "$TEST_DIR/.isac.yaml"
+cd "$TEST_DIR"
+bash "$HOOKS_DIR/on-session-start.sh" > /dev/null 2>&1
+EXIT_CODE=$?
+assert_equals "0" "$EXIT_CODE" "スクリプトが終了コード0で完了"
+
+# テスト6: 2秒以内に完了する（パフォーマンス制約）
+START_TIME=$(date +%s)
+cd "$TEST_DIR"
+bash "$HOOKS_DIR/on-session-start.sh" > /dev/null 2>&1
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+if [ "$ELAPSED" -le 2 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: 2秒以内に完了 (${ELAPSED}秒)"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: 2秒を超過 (${ELAPSED}秒)"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト7: コード行にgit fetchを含まない（セキュリティ: git fetch禁止確認）
+# コメント行（#で始まる行）を除外して、実行コードにgitネットワークコマンドがないことを確認
+if grep -v '^[[:space:]]*#' "$HOOKS_DIR/on-session-start.sh" | grep -q "git fetch" 2>/dev/null || \
+   grep -v '^[[:space:]]*#' "$HOOKS_DIR/on-session-start.sh" | grep -q "git pull" 2>/dev/null || \
+   grep -v '^[[:space:]]*#' "$HOOKS_DIR/on-session-start.sh" | grep -q "git ls-remote" 2>/dev/null; then
+    echo -e "${RED}✗ FAIL${NC}: スクリプトのコード行にgit fetch/pull/ls-remoteが含まれている"
+    FAILED=$((FAILED + 1))
+else
+    echo -e "${GREEN}✓ PASS${NC}: スクリプトのコード行にgitネットワークコマンドが含まれていない"
+    PASSED=$((PASSED + 1))
+fi
+
+# テスト8: 親ディレクトリの.isac.yaml探索
+mkdir -p "$TEST_DIR/subdir/nested"
+echo "project_id: parent-session-project" > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(cd "$TEST_DIR/subdir/nested" && bash "$HOOKS_DIR/on-session-start.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "parent-session-project" "親ディレクトリの.isac.yamlからプロジェクトIDを取得"
+
+# テスト9: クォート付きproject_idを正しく解析
+echo 'project_id: "quoted-session-project"' > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(cd "$TEST_DIR" && bash "$HOOKS_DIR/on-session-start.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "quoted-session-project" "クォート付きproject_idを正しく表示"
+
+# テスト10: シングルクォート付きproject_id
+echo "project_id: 'single-quoted-session'" > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(cd "$TEST_DIR" && bash "$HOOKS_DIR/on-session-start.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "single-quoted-session" "シングルクォート付きproject_idを正しく表示"
+
+# テスト11: 日本語プロジェクトID
+echo "project_id: テストプロジェクト" > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(cd "$TEST_DIR" && bash "$HOOKS_DIR/on-session-start.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "テストプロジェクト" "日本語プロジェクトIDを正しく表示"
+
+# テスト12: 空のproject_idの場合
+echo "project_id: " > "$TEST_DIR/.isac.yaml"
+OUTPUT=$(cd "$TEST_DIR" && bash "$HOOKS_DIR/on-session-start.sh" 2>/dev/null)
+assert_contains "$OUTPUT" "Project" "空のproject_idで警告が表示される"
+
+# テスト13: settings.yamlにSessionStartフックが定義されている
+SETTINGS_FILE="$SCRIPT_DIR/.claude/settings.yaml"
+assert_file_grep "$SETTINGS_FILE" "SessionStart" "settings.yamlにSessionStartフックが定義されている"
+
+# テスト14: SessionStartフックがon-session-start.shを参照している
+assert_file_grep "$SETTINGS_FILE" "on-session-start.sh" "SessionStartフックがon-session-start.shを参照している"
+
+# テスト15: SessionStartフックのタイムアウトが2000ms以下
+if grep -A3 "SessionStart" "$SETTINGS_FILE" | grep -q "timeout: 2000"; then
+    echo -e "${GREEN}✓ PASS${NC}: SessionStartフックのタイムアウトが2000ms"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: SessionStartフックのタイムアウトが2000msでない"
+    FAILED=$((FAILED + 1))
+fi
+
+echo ""
+
+# ========================================
 # isac CLI のテスト
 # ========================================
 echo "----------------------------------------"

@@ -109,12 +109,13 @@ isac/
 │   └── isac               # メインCLI
 ├── .claude/               # Claude Code CLI 設定
 │   ├── hooks/
-│   │   ├── on-prompt.sh        # 記憶検索
-│   │   ├── on-stop.sh          # タスク完了時のAI分類プロンプト
-│   │   ├── post-edit.sh        # 記憶保存
-│   │   ├── resolve-project.sh  # プロジェクトID解決
-│   │   ├── save-memory.sh      # AI分類結果の記憶保存
-│   │   └── sensitive-filter.sh # 機密情報フィルター
+│   │   ├── on-session-start.sh  # セッション開始時の軽量ステータス表示
+│   │   ├── on-prompt.sh         # 記憶検索
+│   │   ├── on-stop.sh           # タスク完了時のAI分類プロンプト
+│   │   ├── post-edit.sh         # 記憶保存
+│   │   ├── resolve-project.sh   # プロジェクトID解決
+│   │   ├── save-memory.sh       # AI分類結果の記憶保存
+│   │   └── sensitive-filter.sh  # 機密情報フィルター
 │   └── skills/            # Skill 定義
 ├── memory-service/        # Memory Service (Docker)
 ├── templates/             # プロジェクトテンプレート
