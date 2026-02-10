@@ -205,7 +205,7 @@ ISACのスキルは必ず `isac-` プレフィックスを付けること（他�
 
 | スキル名 | 用途 |
 |---------|------|
-| `/isac-autopilot` | 設計→実装→レビュー→テスト→Draft PR作成を自動実行 |
+| `/isac-autopilot` | 設計→実装→テスト→レビュー→Draft PR作成を自動実行 |
 | `/isac-review` | 設計レビュー（ペルソナ議論） |
 | `/isac-code-review` | コードレビュー（4ペルソナ・スコアリング） |
 | `/isac-pr-review` | GitHub PRレビュー（4ペルソナ・PRコメント投稿） |
