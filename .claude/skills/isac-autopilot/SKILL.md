@@ -11,7 +11,6 @@ description: 要件からコンテキスト収集・設計・実装・テスト�
 
 ```
 /isac-autopilot <要件>
-/isac-autopilot <GitHub Issue URL>
 ```
 
 ## Phase 構成
@@ -127,9 +126,7 @@ CONTEXT=$(curl -s --max-time 5 "$MEMORY_URL/context/$ENCODED_PROJECT_ID" \
 
 ### Phase 3: テスト実行（自動）
 
-1. テストコマンドを決定:
-   - `.isac.yaml` の `autopilot.test_command` があれば使用
-   - なければ自動検出（pytest, npm test, go test など）
+1. テストコマンドを自動検出（pytest, npm test, go test など）
 2. テスト実行
 3. 失敗時: エラー内容を記録し、Phase 2 のループ判定に含める
 
@@ -459,7 +456,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ⚠️ Autopilot: 3回のレビューで合格できませんでした。
 
 現在の状態:
-  - レビュースコア: {score}/100
+  - 簡易チェック: {通過/未通過}
   - テスト結果: {status}
 
 最後の指摘事項:
@@ -484,25 +481,6 @@ Claude は Task tool を起動する前に、以下のように返答してく�
 ```
 
 完了後、結果（Draft PR URL、スコア等）をユーザーに報告してください。
-
-## 設定
-
-`.isac.yaml` でカスタマイズ可能:
-
-```yaml
-autopilot:
-  # テストコマンド（自動検出をオーバーライド）
-  test_command: "pytest -v"
-
-  # レビュー合格スコア（デフォルト: 90）
-  min_review_score: 90
-
-  # 最大ループ回数（デフォルト: 2）
-  max_loop_count: 2
-
-  # 自動コミットメッセージのプレフィックス
-  commit_prefix: "feat"
-```
 
 ## 制限事項
 
