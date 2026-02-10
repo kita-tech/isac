@@ -75,21 +75,43 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 
 ```bash
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
+# Memory Service 接続確認（3秒タイムアウト）
+if ! curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
+    echo "❌ Memory Service に接続できません（$MEMORY_URL）"
+    echo "Docker が起動しているか確認してください: docker compose -f memory-service/docker-compose.yml up -d"
+    exit 1
+fi
+
+RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
   -H "Content-Type: application/json" \
-  -d '{
-    "content": "【決定】[決定内容]\n【理由】[主な理由]\n【検討過程】4人のペルソナでレビュー実施。[簡潔な経緯]",
-    "type": "decision",
-    "importance": [0.6-0.9],
-    "scope": "project",
-    "scope_id": "'"$PROJECT_ID"'",
-    "metadata": {
-      "category": "[カテゴリ]",
-      "review_type": "persona_review",
-      "participants": 4
-    }
-  }'
+  -d "$(jq -n \
+    --arg content "【決定】[決定内容]\n【理由】[主な理由]\n【検討過程】4人のペルソナでレビュー実施。[簡潔な経緯]" \
+    --argjson importance 0.8 \
+    --arg scope_id "$PROJECT_ID" \
+    --arg category "[カテゴリ]" \
+    '{
+      content: $content,
+      type: "decision",
+      importance: $importance,
+      scope: "project",
+      scope_id: $scope_id,
+      metadata: {
+        category: $category,
+        review_type: "persona_review",
+        participants: 4
+      }
+    }')")
+
+# 保存結果の確認
+if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+    echo "✅ 決定を記録しました (ID: $MEMORY_ID)"
+else
+    echo "❌ 決定の記録に失敗しました"
+    echo "$RESPONSE"
+fi
 ```
 
 ## 重要度の目安
@@ -190,4 +212,7 @@ curl -X POST "${MEMORY_SERVICE_URL:-http://localhost:8100}/store" \
 - `/isac-memory` - 記憶の検索・管理
 - `/isac-decide` - 決定の直接記録（レビューなし）
 - `/isac-code-review` - コードレビュー（実装の品質チェック）
+- `/isac-pr-review` - GitHub PRレビュー（PRコメント投稿）
+- `/isac-autopilot` - 設計→実装→テスト→レビュー→Draft PR作成を自動実行
+- `/isac-save-memory` - AI分析による保存形式提案
 - `/isac-suggest` - 状況に応じたSkill提案
