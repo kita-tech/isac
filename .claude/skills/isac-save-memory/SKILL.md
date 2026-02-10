@@ -17,6 +17,26 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 
 以下のすべての curl コマンドで、この方法で取得した `$PROJECT_ID` を使用すること。
 
+## Memory Service 接続確認
+
+記憶の検索・保存の前に、Memory Service の接続を確認する。
+
+```bash
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
+
+# 接続確認（3秒タイムアウト）
+if ! curl -s --max-time 3 "$MEMORY_URL/health" > /dev/null 2>&1; then
+    echo "❌ Memory Service に接続できません（$MEMORY_URL）"
+    echo ""
+    echo "確認事項:"
+    echo "  - Docker が起動しているか: docker ps"
+    echo "  - Memory Service が起動しているか: docker compose -f memory-service/docker-compose.yml up -d"
+    echo ""
+    echo "Memory Service を起動してから再実行してください。"
+    exit 1
+fi
+```
+
 ## 使用方法
 
 ```
@@ -80,8 +100,15 @@ Step 1 で「📝 記憶として保存」が選択された場合、保存前�
 
 ```bash
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-curl -s "http://localhost:8100/search?query=キーワード2-3語&scope_id=$PROJECT_ID&category=カテゴリ&limit=5"
+# Memory Service 接続確認（上記「Memory Service 接続確認」セクション参照）
+
+RESULT=$(curl -s --get "$MEMORY_URL/search" \
+  --data-urlencode "query=キーワード2-3語" \
+  --data-urlencode "scope_id=$PROJECT_ID" \
+  --data-urlencode "category=カテゴリ" \
+  --data-urlencode "limit=5")
 ```
 
 #### 2-2. AI による新旧記憶の比較判定
@@ -126,11 +153,9 @@ curl -s "http://localhost:8100/search?query=キーワード2-3語&scope_id=$PROJ
 
 #### 📝 記憶を選択した場合
 
-従来通りMemory Serviceに保存：
+作業内容を以下の形式で分類し、Memory Serviceに保存します。
 
-## 実行手順
-
-以下の形式で作業内容を分類し、JSON出力してください：
+**分類フォーマット:**
 
 ```json
 {
@@ -142,17 +167,18 @@ curl -s "http://localhost:8100/search?query=キーワード2-3語&scope_id=$PROJ
 }
 ```
 
-### type（記憶タイプ）
+**type（記憶タイプ）:**
 - **decision**: 技術選定、設計方針、アーキテクチャ決定など重要な判断
 - **work**: 実装作業、バグ修正、リファクタリングなど日常的な作業
 - **knowledge**: 学習した知見、ベストプラクティス、チームで共有すべき情報
 
-### PRレビュー作業の分類ルール
+**PRレビュー作業の分類ルール:**
 - /isac-pr-review や /isac-code-review の実施記録 → type: **work**
 - レビュー結果のスコアや個別の指摘事項 → **保存不要**（PRコメントに残っているため記憶として保存しない）
 - レビュー中に決まったチーム方針・コーディングルール → type: **decision**（/isac-decide で別途記録を推奨）
 
-### category（カテゴリ）
+**category（カテゴリ）:**
+
 | カテゴリ | 説明 |
 |---------|------|
 | backend | サーバーサイド、API実装、データ処理 |
@@ -167,39 +193,57 @@ curl -s "http://localhost:8100/search?query=キーワード2-3語&scope_id=$PROJ
 | architecture | 全体設計、パターン、構造決定 |
 | other | 上記に当てはまらないもの |
 
-### tags（タグ例）
+**tags（タグ例）:**
 - 技術: python, react, fastapi, postgresql, docker
 - 作業種別: bugfix, refactor, feature, optimization
 - ドメイン: auth, payment, user, api
 
-### importance（重要度）
+**importance（重要度）:**
 - **0.9-1.0**: 長期的に参照すべき重要な決定
 - **0.6-0.8**: チームで共有すべき知見
 - **0.3-0.5**: 通常の作業記録
 - **0.1-0.2**: 軽微な変更
 
-## 記憶保存時の分類
-
-JSONを出力した後、以下のcurlコマンドでMemory Serviceに保存してください：
+**保存コマンド:**
 
 ```bash
 PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'"'" || echo "${CLAUDE_PROJECT:-default}")
+MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
-curl -X POST http://localhost:8100/store \
+# Memory Service 接続確認（上記「Memory Service 接続確認」セクション参照）
+
+RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
   -H "Content-Type: application/json" \
-  -d '{
-    "content": "summaryの内容",
-    "type": "typeの値",
-    "importance": 0.5,
-    "scope": "project",
-    "scope_id": "'"$PROJECT_ID"'",
-    "category": "categoryの値",
-    "tags": ["タグ1", "タグ2"],
-    "supersedes": ["廃止対象ID1", "廃止対象ID2"],
-    "metadata": {
-      "supersede_reason": "auto-detected"
-    }
-  }'
+  -d "$(jq -n \
+    --arg content "summaryの内容" \
+    --arg type "typeの値" \
+    --argjson importance 0.5 \
+    --arg scope_id "$PROJECT_ID" \
+    --arg category "categoryの値" \
+    --argjson tags '["タグ1", "タグ2"]' \
+    --argjson supersedes '["廃止対象ID1", "廃止対象ID2"]' \
+    '{
+      content: $content,
+      type: $type,
+      importance: $importance,
+      scope: "project",
+      scope_id: $scope_id,
+      category: $category,
+      tags: $tags,
+      supersedes: $supersedes,
+      metadata: {
+        supersede_reason: "auto-detected"
+      }
+    }')")
+
+# 保存結果の確認
+if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+    echo "✅ 記憶を保存しました (ID: $MEMORY_ID)"
+else
+    echo "❌ 記憶の保存に失敗しました"
+    echo "$RESPONSE"
+fi
 ```
 
 - Step 2 で廃止対象が選択された場合、`supersedes` に廃止対象の記憶IDを設定
@@ -314,8 +358,38 @@ gh pr create --title "Add [hook-name] hook" --body "## 概要
 | Skill | **必要** | ユーザーが明示的に実行するが、チーム全体に影響 |
 | Hooks | **必要** | 自動実行されるため、誤った処理のリスクが高い |
 
+## 出力フォーマット
+
+### 保存成功時
+
+```
+✅ 記憶を保存しました (ID: abc123)
+```
+
+### 保存失敗時
+
+```
+❌ 記憶の保存に失敗しました
+```
+
+### Memory Service 未接続時
+
+```
+❌ Memory Service に接続できません（http://localhost:8100）
+
+確認事項:
+  - Docker が起動しているか: docker ps
+  - Memory Service が起動しているか: docker compose -f memory-service/docker-compose.yml up -d
+
+Memory Service を起動してから再実行してください。
+```
+
 ## 関連スキル
 
 - `/isac-memory` - 記憶の検索・管理
 - `/isac-decide` - 決定の直接記録（レビューなし）
 - `/isac-review` - 設計レビュー（ペルソナ議論）
+- `/isac-code-review` - コードレビュー（品質チェック）
+- `/isac-autopilot` - 設計→実装→テスト→レビュー→Draft PR作成を自動実行
+- `/isac-todo` - 個人タスク管理（add/list/done/clear）
+- `/isac-suggest` - 状況に応じたSkill提案
