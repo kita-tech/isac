@@ -1244,6 +1244,55 @@ else
     FAILED=$((FAILED + 1))
 fi
 
+# テスト10: isac init --force で settings.yaml が自動削除される
+cd "$TEST_DIR"
+rm -rf .claude .isac.yaml
+"$BIN_DIR/isac" init test-settings-cleanup --yes 2>/dev/null
+# settings.yaml を手動で作成（レガシー状態を再現）
+echo "hooks:" > "$TEST_DIR/.claude/settings.yaml"
+# --force で再初期化
+OUTPUT=$("$BIN_DIR/isac" init test-settings-cleanup --force --yes 2>&1)
+if [ ! -f "$TEST_DIR/.claude/settings.yaml" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: isac init --forceでsettings.yamlが自動削除される"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: isac init --forceでsettings.yamlが削除されなかった"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト11: isac init --force で settings.yaml 削除のログが出力される
+if echo "$OUTPUT" | grep -q "Removed deprecated .claude/settings.yaml"; then
+    echo -e "${GREEN}✓ PASS${NC}: settings.yaml削除のログメッセージが出力される"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: settings.yaml削除のログメッセージが出力されなかった"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト12: isac init（--forceなし）で settings.yaml が警告のみで残る
+# 注: .claude/ が存在しない状態で init すると setup_claude_directory が呼ばれる
+cd "$TEST_DIR"
+rm -rf .claude .isac.yaml
+mkdir -p "$TEST_DIR/.claude"
+echo "hooks:" > "$TEST_DIR/.claude/settings.yaml"
+# --force ありで init（.claude/ が既に存在するので force で setup_claude_directory が呼ばれる）
+# ここでは --force なしの動作を確認するため .claude/ を削除して新規作成させる
+rm -rf .claude .isac.yaml
+"$BIN_DIR/isac" init test-settings-warn --yes 2>/dev/null
+# init で .claude/ が新規作成された後に settings.yaml を配置
+echo "hooks:" > "$TEST_DIR/.claude/settings.yaml"
+# 再度 --force で init して、force=true の動作を確認（テスト10で検証済み）
+# --force なしの場合は .claude/ が存在するため setup_claude_directory が呼ばれない（正常動作）
+# よって「通常の init で settings.yaml が残る」ことをテスト
+OUTPUT=$("$BIN_DIR/isac" init test-settings-warn --yes 2>&1)
+if [ -f "$TEST_DIR/.claude/settings.yaml" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: --forceなしではsettings.yamlが残る（setup_claude_directoryが呼ばれない）"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: --forceなしでもsettings.yamlが削除されてしまった"
+    FAILED=$((FAILED + 1))
+fi
+
 # ----------------------------------------
 # MCP設定非生成 テスト
 # ----------------------------------------

@@ -676,10 +676,15 @@ setup_claude_directory() {
         create_settings_json
     fi
 
-    # 古い settings.yaml が残っている場合に警告
+    # 古い settings.yaml が残っている場合
     if [ -f ".claude/settings.yaml" ]; then
-        echo -e "  ${YELLOW}⚠${NC} .claude/settings.yaml is deprecated (Claude Code CLI uses settings.json)"
-        echo "     You can safely delete .claude/settings.yaml"
+        if [ "${force}" = true ]; then
+            rm -f .claude/settings.yaml
+            echo -e "  ${GREEN}✓${NC} Removed deprecated .claude/settings.yaml"
+        else
+            echo -e "  ${YELLOW}⚠${NC} .claude/settings.yaml is deprecated (Claude Code CLI uses settings.json)"
+            echo "     Run 'isac init --force' to remove it automatically"
+        fi
     fi
 
     echo -e "  ${GREEN}✓${NC} .claude/settings.json ready"
