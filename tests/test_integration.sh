@@ -157,7 +157,7 @@ echo "----------------------------------------"
 
 # 4-1. on-prompt.sh でコンテキスト取得
 cd "$TEST_DIR/my-project"
-HOOK_OUTPUT=$(bash "$SCRIPT_DIR/.claude/hooks/on-prompt.sh" "pytestについて" 2>&1)
+HOOK_OUTPUT=$(echo '{"prompt":"pytestについて"}' | bash "$SCRIPT_DIR/.claude/hooks/on-prompt.sh" 2>&1)
 
 if [[ "$HOOK_OUTPUT" == *"pytest"* ]] || [[ "$HOOK_OUTPUT" == *"決定"* ]]; then
     test_pass "Hookがコンテキストを出力する"

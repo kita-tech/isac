@@ -377,34 +377,34 @@ echo "----------------------------------------"
 echo "on-prompt.sh テスト"
 echo "----------------------------------------"
 
-# テスト1: 正常なプロジェクトでコンテキスト取得
+# テスト1: 正常なプロジェクトでコンテキスト取得（stdin JSON入力）
 echo "project_id: isac" > "$TEST_DIR/.isac.yaml"
 cd "$TEST_DIR"
-OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>/dev/null)
+OUTPUT=$(echo '{"prompt":"テスト"}' | bash "$HOOKS_DIR/on-prompt.sh" 2>/dev/null)
 
 # グローバルナレッジまたはプロジェクト決定が含まれていればOK
 if [[ "$OUTPUT" == *"グローバルナレッジ"* ]] || [[ "$OUTPUT" == *"プロジェクト決定"* ]] || [[ "$OUTPUT" == *"最近の"* ]]; then
-    echo -e "${GREEN}✓ PASS${NC}: on-prompt.shがコンテキストを出力"
+    echo -e "${GREEN}✓ PASS${NC}: on-prompt.shがコンテキストを出力（stdin JSON入力）"
     PASSED=$((PASSED + 1))
 elif [ -z "$OUTPUT" ]; then
     echo -e "${YELLOW}⚠ SKIP${NC}: コンテキストが空（メモリがない可能性）"
 else
-    echo -e "${GREEN}✓ PASS${NC}: on-prompt.shが実行された"
+    echo -e "${GREEN}✓ PASS${NC}: on-prompt.shが実行された（stdin JSON入力）"
     PASSED=$((PASSED + 1))
 fi
 
-# テスト2: 空のクエリではスキップ
-OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "" 2>/dev/null)
-assert_empty "$OUTPUT" "空のクエリでは出力なし"
+# テスト2: 空のpromptではスキップ
+OUTPUT=$(echo '{"prompt":""}' | bash "$HOOKS_DIR/on-prompt.sh" 2>/dev/null)
+assert_empty "$OUTPUT" "空のpromptでは出力なし"
 
 # テスト3: 未設定プロジェクトで警告
 rm "$TEST_DIR/.isac.yaml"
-OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>/dev/null)
+OUTPUT=$(echo '{"prompt":"テスト"}' | bash "$HOOKS_DIR/on-prompt.sh" 2>/dev/null)
 assert_contains "$OUTPUT" "プロジェクト設定" "未設定時に警告を出力"
 
 # テスト4: 特殊文字を含むプロジェクトID（URLエンコード）
 echo "project_id: test-project/with/slashes" > "$TEST_DIR/.isac.yaml"
-OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>&1)
+OUTPUT=$(echo '{"prompt":"テスト"}' | bash "$HOOKS_DIR/on-prompt.sh" 2>&1)
 # スラッシュを含むプロジェクトIDでエラーにならないこと
 if [ $? -eq 0 ] || [[ "$OUTPUT" != *"error"* ]]; then
     echo -e "${GREEN}✓ PASS${NC}: スラッシュを含むプロジェクトIDでエラーにならない"
@@ -416,7 +416,7 @@ fi
 
 # テスト5: スペースを含むプロジェクトID
 echo "project_id: test project with spaces" > "$TEST_DIR/.isac.yaml"
-OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>&1)
+OUTPUT=$(echo '{"prompt":"テスト"}' | bash "$HOOKS_DIR/on-prompt.sh" 2>&1)
 if [ $? -eq 0 ] || [[ "$OUTPUT" != *"error"* ]]; then
     echo -e "${GREEN}✓ PASS${NC}: スペースを含むプロジェクトIDでエラーにならない"
     PASSED=$((PASSED + 1))
@@ -427,7 +427,7 @@ fi
 
 # テスト6: アンパサンドを含むプロジェクトID
 echo "project_id: test&project" > "$TEST_DIR/.isac.yaml"
-OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>&1)
+OUTPUT=$(echo '{"prompt":"テスト"}' | bash "$HOOKS_DIR/on-prompt.sh" 2>&1)
 if [ $? -eq 0 ] || [[ "$OUTPUT" != *"error"* ]]; then
     echo -e "${GREEN}✓ PASS${NC}: &を含むプロジェクトIDでエラーにならない"
     PASSED=$((PASSED + 1))
@@ -438,7 +438,7 @@ fi
 
 # テスト7: 日本語を含むプロジェクトID
 echo "project_id: テストプロジェクト" > "$TEST_DIR/.isac.yaml"
-OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "テスト" 2>&1)
+OUTPUT=$(echo '{"prompt":"テスト"}' | bash "$HOOKS_DIR/on-prompt.sh" 2>&1)
 if [ $? -eq 0 ] || [[ "$OUTPUT" != *"error"* ]]; then
     echo -e "${GREEN}✓ PASS${NC}: 日本語プロジェクトIDでエラーにならない"
     PASSED=$((PASSED + 1))
@@ -447,15 +447,19 @@ else
     FAILED=$((FAILED + 1))
 fi
 
-# テスト8: isac statusコマンド検出
+# テスト8: isac statusコマンド検出（stdin JSON入力）
 echo "project_id: test-status" > "$TEST_DIR/.isac.yaml"
-OUTPUT=$(bash "$HOOKS_DIR/on-prompt.sh" "isac status" 2>/dev/null)
+OUTPUT=$(echo '{"prompt":"isac status"}' | bash "$HOOKS_DIR/on-prompt.sh" 2>/dev/null)
 if [[ "$OUTPUT" == *"ISAC Status"* ]] || [[ "$OUTPUT" == *"CLI出力"* ]]; then
-    echo -e "${GREEN}✓ PASS${NC}: isac statusコマンドでステータス出力を注入"
+    echo -e "${GREEN}✓ PASS${NC}: isac statusコマンドでステータス出力を注入（stdin JSON入力）"
     PASSED=$((PASSED + 1))
 else
     echo -e "${YELLOW}⚠ SKIP${NC}: isac statusの注入が確認できず（isac CLIのパス問題かも）"
 fi
+
+# テスト9: stdin JSONにpromptキーがない場合はスキップ
+OUTPUT=$(echo '{}' | bash "$HOOKS_DIR/on-prompt.sh" 2>/dev/null)
+assert_empty "$OUTPUT" "promptキーがないJSONでは出力なし"
 
 echo ""
 
@@ -466,10 +470,10 @@ echo "----------------------------------------"
 echo "post-edit.sh テスト"
 echo "----------------------------------------"
 
-# テスト1: ファイル編集を記録
+# テスト1: ファイル編集を記録（stdin JSON入力）
 echo "project_id: test-post-edit" > "$TEST_DIR/.isac.yaml"
 cd "$TEST_DIR"
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/test.py" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/test.py"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 
 # Memory Serviceに記録されたか確認
 sleep 1
@@ -477,21 +481,21 @@ SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=test.py&scope_id=test-
 FOUND=$(echo "$SEARCH_RESULT" | jq -r '.memories | length')
 
 if [ "$FOUND" -gt 0 ]; then
-    echo -e "${GREEN}✓ PASS${NC}: post-edit.shがメモリに記録"
+    echo -e "${GREEN}✓ PASS${NC}: post-edit.shがメモリに記録（stdin JSON入力）"
     PASSED=$((PASSED + 1))
 else
     echo -e "${YELLOW}⚠ WARN${NC}: post-edit.shの記録が確認できず（タイミングの問題かも）"
 fi
 
-# テスト2: 空のファイルパスではスキップ
-bash "$HOOKS_DIR/post-edit.sh" "" 2>/dev/null && {
-    echo -e "${GREEN}✓ PASS${NC}: 空のファイルパスでエラーにならない"
+# テスト2: 空のfile_pathではスキップ
+echo '{"tool_input":{"file_path":""}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null && {
+    echo -e "${GREEN}✓ PASS${NC}: 空のfile_pathでエラーにならない"
     PASSED=$((PASSED + 1))
 }
 
 # テスト3: 機密ファイルはスキップ
 echo "project_id: test-post-edit-sensitive" > "$TEST_DIR/.isac.yaml"
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/.env" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/.env"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 sleep 1
 SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=.env&scope_id=test-post-edit-sensitive" 2>/dev/null)
 FOUND=$(echo "$SEARCH_RESULT" | jq -r '.memories | length')
@@ -504,26 +508,26 @@ else
 fi
 
 # テスト4: .env.* 形式の機密ファイルスキップ
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/.env.local" 2>/dev/null
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/.env.production" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/.env.local"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/.env.production"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 echo -e "${GREEN}✓ PASS${NC}: .env.*形式の機密ファイルでエラーにならない"
 PASSED=$((PASSED + 1))
 
 # テスト5: .pemファイルのスキップ
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/server.pem" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/server.pem"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 echo -e "${GREEN}✓ PASS${NC}: .pemファイルでエラーにならない"
 PASSED=$((PASSED + 1))
 
 # テスト6: credentials.*ファイルのスキップ
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/credentials.json" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/credentials.json"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 echo -e "${GREEN}✓ PASS${NC}: credentials.jsonでエラーにならない"
 PASSED=$((PASSED + 1))
 
-# テスト7: スペースを含むファイル名
+# テスト7: スペースを含むファイル名（stdin JSON入力）
 echo "project_id: test-post-edit-spaces" > "$TEST_DIR/.isac.yaml"
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/file with spaces.py" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/file with spaces.py"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ PASS${NC}: スペースを含むファイル名でエラーにならない"
+    echo -e "${GREEN}✓ PASS${NC}: スペースを含むファイル名でエラーにならない（stdin JSON入力）"
     PASSED=$((PASSED + 1))
 else
     echo -e "${RED}✗ FAIL${NC}: スペースを含むファイル名でエラー"
@@ -531,9 +535,9 @@ else
 fi
 
 # テスト8: 日本語ファイル名
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/テストファイル.py" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/テストファイル.py"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ PASS${NC}: 日本語ファイル名でエラーにならない"
+    echo -e "${GREEN}✓ PASS${NC}: 日本語ファイル名でエラーにならない（stdin JSON入力）"
     PASSED=$((PASSED + 1))
 else
     echo -e "${RED}✗ FAIL${NC}: 日本語ファイル名でエラー"
@@ -541,18 +545,18 @@ else
 fi
 
 # テスト9: ダブルクォートを含むファイル名（JSONエスケープ確認）
-bash "$HOOKS_DIR/post-edit.sh" '/path/to/file"with"quotes.py' 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/file_with_quotes.py"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ PASS${NC}: ダブルクォートを含むファイル名でエラーにならない"
+    echo -e "${GREEN}✓ PASS${NC}: stdin JSON入力でのファイル名でエラーにならない"
     PASSED=$((PASSED + 1))
 else
-    echo -e "${RED}✗ FAIL${NC}: ダブルクォートを含むファイル名でエラー"
+    echo -e "${RED}✗ FAIL${NC}: stdin JSON入力でのファイル名でエラー"
     FAILED=$((FAILED + 1))
 fi
 
 # テスト10: 長いファイルパス (256文字以上)
 LONG_PATH="/path/to/very/long/directory/structure/that/goes/on/and/on/and/on/for/a/very/long/time/to/test/boundary/conditions/in/file/handling/routines/that/might/have/issues/with/extremely/long/paths/like/this/one/file.py"
-bash "$HOOKS_DIR/post-edit.sh" "$LONG_PATH" 2>/dev/null
+echo "{\"tool_input\":{\"file_path\":\"$LONG_PATH\"}}" | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ PASS${NC}: 長いファイルパスでエラーにならない"
     PASSED=$((PASSED + 1))
@@ -563,14 +567,14 @@ fi
 
 # テスト11: 様々な拡張子のファイルタイプ検出
 for ext in py js ts tsx jsx go rs rb java php vue css scss html sql sh yaml json; do
-    bash "$HOOKS_DIR/post-edit.sh" "/path/to/test.$ext" 2>/dev/null
+    echo "{\"tool_input\":{\"file_path\":\"/path/to/test.$ext\"}}" | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 done
 echo -e "${GREEN}✓ PASS${NC}: 各種拡張子のファイルでエラーにならない"
 PASSED=$((PASSED + 1))
 
 # テスト12: testディレクトリのカテゴリ判定
 echo "project_id: test-post-edit-category" > "$TEST_DIR/.isac.yaml"
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/tests/test_example.py" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/tests/test_example.py"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 sleep 1
 SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=test_example&scope_id=test-post-edit-category" 2>/dev/null)
 CATEGORY=$(echo "$SEARCH_RESULT" | jq -r '.memories[0].category // "unknown"')
@@ -584,7 +588,7 @@ else
 fi
 
 # テスト13: apiディレクトリのカテゴリ判定
-bash "$HOOKS_DIR/post-edit.sh" "/path/to/api/routes/users.py" 2>/dev/null
+echo '{"tool_input":{"file_path":"/path/to/api/routes/users.py"}}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
 sleep 1
 SEARCH_RESULT=$(curl -s "$MEMORY_SERVICE_URL/search?query=users.py&scope_id=test-post-edit-category" 2>/dev/null)
 CATEGORY=$(echo "$SEARCH_RESULT" | jq -r '.memories[0].category // "unknown"')
@@ -595,6 +599,16 @@ elif [ "$CATEGORY" = "unknown" ]; then
     echo -e "${YELLOW}⚠ SKIP${NC}: カテゴリ判定が確認できず"
 else
     echo -e "${YELLOW}⚠ WARN${NC}: apiディレクトリのファイルがapiカテゴリでない ($CATEGORY)"
+fi
+
+# テスト14: tool_inputがないJSONではスキップ
+echo '{}' | bash "$HOOKS_DIR/post-edit.sh" 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ PASS${NC}: tool_inputがないJSONでエラーにならない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: tool_inputがないJSONでエラー"
+    FAILED=$((FAILED + 1))
 fi
 
 echo ""
@@ -881,6 +895,134 @@ assert_file_grep "$CLASSIFIER_MD" "null" "memory-classifier.mdにscope_id=null�
 echo ""
 
 # ========================================
+# _log.sh ログ機能テスト
+# ========================================
+echo "----------------------------------------"
+echo "_log.sh ログ機能テスト"
+echo "----------------------------------------"
+
+# 元の値を保存
+ORIG_ISAC_GLOBAL_DIR="${ISAC_GLOBAL_DIR:-}"
+ORIG_CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
+
+# テスト1: _log.sh が存在し source 可能
+if source "$HOOKS_DIR/_log.sh" 2>/dev/null; then
+    echo -e "${GREEN}✓ PASS${NC}: _log.shが存在しsource可能"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: _log.shが存在しないまたはsource不可"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト2: isac_log関数がファイルにログを書き込む
+LOG_TEST_DIR=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR"
+export CLAUDE_PROJECT_DIR="$SCRIPT_DIR"
+source "$HOOKS_DIR/_log.sh"
+isac_log "test-hook" "OK test=true"
+if [ -f "$LOG_TEST_DIR/logs/hooks.log" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: isac_logがファイルにログを書き込む"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: isac_logがファイルにログを書き込まない"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト3: ログフォーマットの検証（タイムスタンプ、hook名、状態）
+if [ -f "$LOG_TEST_DIR/logs/hooks.log" ]; then
+    LOG_CONTENT=$(cat "$LOG_TEST_DIR/logs/hooks.log")
+    if echo "$LOG_CONTENT" | grep -qE '^\[.*\] \[test-hook\] OK test=true$'; then
+        echo -e "${GREEN}✓ PASS${NC}: ログフォーマットが正しい（タイムスタンプ、hook名、状態）"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: ログフォーマットが不正: $LOG_CONTENT"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+rm -rf "$LOG_TEST_DIR"
+
+# テスト4: ISAC開発プロジェクト以外ではログが出ない
+LOG_TEST_DIR2=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR2"
+export CLAUDE_PROJECT_DIR="/tmp/non-isac-project"
+source "$HOOKS_DIR/_log.sh"
+isac_log "test-hook" "should not appear"
+if [ ! -f "$LOG_TEST_DIR2/logs/hooks.log" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: ISAC以外のプロジェクトではログが出ない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: ISAC以外のプロジェクトでもログが出てしまった"
+    FAILED=$((FAILED + 1))
+fi
+rm -rf "$LOG_TEST_DIR2"
+
+# テスト5: CLAUDE_PROJECT_DIR未設定時もログが出ない
+LOG_TEST_DIR3=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR3"
+unset CLAUDE_PROJECT_DIR
+source "$HOOKS_DIR/_log.sh"
+isac_log "test-hook" "should not appear"
+if [ ! -f "$LOG_TEST_DIR3/logs/hooks.log" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: CLAUDE_PROJECT_DIR未設定時はログが出ない"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: CLAUDE_PROJECT_DIR未設定時もログが出てしまった"
+    FAILED=$((FAILED + 1))
+fi
+rm -rf "$LOG_TEST_DIR3"
+
+# テスト6: 複数のisac_log呼び出しでエントリが追加される
+LOG_TEST_DIR4=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR4"
+export CLAUDE_PROJECT_DIR="$SCRIPT_DIR"
+source "$HOOKS_DIR/_log.sh"
+isac_log "hook-a" "OK first"
+isac_log "hook-b" "SKIP reason=test"
+LINE_COUNT=$(wc -l < "$LOG_TEST_DIR4/logs/hooks.log" | tr -d ' ')
+assert_equals "2" "$LINE_COUNT" "複数のisac_log呼び出しでエントリが追加される"
+rm -rf "$LOG_TEST_DIR4"
+
+# テスト7: SKIP状態のログフォーマット検証
+LOG_TEST_DIR5=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR5"
+export CLAUDE_PROJECT_DIR="$SCRIPT_DIR"
+source "$HOOKS_DIR/_log.sh"
+isac_log "on-prompt" "SKIP reason=empty_query"
+if grep -qE '^\[.*\] \[on-prompt\] SKIP reason=empty_query$' "$LOG_TEST_DIR5/logs/hooks.log" 2>/dev/null; then
+    echo -e "${GREEN}✓ PASS${NC}: SKIP状態のログフォーマットが正しい"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: SKIP状態のログフォーマットが不正"
+    FAILED=$((FAILED + 1))
+fi
+rm -rf "$LOG_TEST_DIR5"
+
+# テスト8: logs/ ディレクトリが自動作成される
+LOG_TEST_DIR6=$(mktemp -d)
+export ISAC_GLOBAL_DIR="$LOG_TEST_DIR6"
+export CLAUDE_PROJECT_DIR="$SCRIPT_DIR"
+source "$HOOKS_DIR/_log.sh"
+isac_log "test" "OK"
+if [ -d "$LOG_TEST_DIR6/logs" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: logs/ディレクトリが自動作成される"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: logs/ディレクトリが自動作成されない"
+    FAILED=$((FAILED + 1))
+fi
+rm -rf "$LOG_TEST_DIR6"
+
+# 元の値を復元
+export ISAC_GLOBAL_DIR="${ORIG_ISAC_GLOBAL_DIR}"
+if [ -n "${ORIG_CLAUDE_PROJECT_DIR}" ]; then
+    export CLAUDE_PROJECT_DIR="${ORIG_CLAUDE_PROJECT_DIR}"
+else
+    unset CLAUDE_PROJECT_DIR
+fi
+
+echo ""
+
+# ========================================
 # on-session-start.sh のテスト
 # ========================================
 echo "----------------------------------------"
@@ -964,19 +1106,61 @@ echo "project_id: " > "$TEST_DIR/.isac.yaml"
 OUTPUT=$(cd "$TEST_DIR" && bash "$HOOKS_DIR/on-session-start.sh" 2>/dev/null)
 assert_contains "$OUTPUT" "Project" "空のproject_idで警告が表示される"
 
-# テスト13: settings.yamlにSessionStartフックが定義されている
-SETTINGS_FILE="$SCRIPT_DIR/.claude/settings.yaml"
-assert_file_grep "$SETTINGS_FILE" "SessionStart" "settings.yamlにSessionStartフックが定義されている"
-
-# テスト14: SessionStartフックがon-session-start.shを参照している
-assert_file_grep "$SETTINGS_FILE" "on-session-start.sh" "SessionStartフックがon-session-start.shを参照している"
-
-# テスト15: SessionStartフックのタイムアウトが2000ms以下
-if grep -A3 "SessionStart" "$SETTINGS_FILE" | grep -q "timeout: 2000"; then
-    echo -e "${GREEN}✓ PASS${NC}: SessionStartフックのタイムアウトが2000ms"
+# テスト13: settings.jsonにSessionStartフックが定義されている
+SETTINGS_FILE="$SCRIPT_DIR/.claude/settings.json"
+if jq -e '.hooks.SessionStart' "$SETTINGS_FILE" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ PASS${NC}: settings.jsonにSessionStartフックが定義されている"
     PASSED=$((PASSED + 1))
 else
-    echo -e "${RED}✗ FAIL${NC}: SessionStartフックのタイムアウトが2000msでない"
+    echo -e "${RED}✗ FAIL${NC}: settings.jsonにSessionStartフックが定義されていない"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト14: SessionStartフックがon-session-start.shを参照している
+SESSION_START_CMD=$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$SETTINGS_FILE" 2>/dev/null)
+if [[ "$SESSION_START_CMD" == *"on-session-start.sh"* ]]; then
+    echo -e "${GREEN}✓ PASS${NC}: SessionStartフックがon-session-start.shを参照している"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: SessionStartフックがon-session-start.shを参照していない (got: $SESSION_START_CMD)"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト15: SessionStartフックのタイムアウトが適切（秒単位）
+SESSION_START_TIMEOUT=$(jq -r '.hooks.SessionStart[0].hooks[0].timeout' "$SETTINGS_FILE" 2>/dev/null)
+if [ "$SESSION_START_TIMEOUT" -le 10 ] 2>/dev/null; then
+    echo -e "${GREEN}✓ PASS${NC}: SessionStartフックのタイムアウトが${SESSION_START_TIMEOUT}秒"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: SessionStartフックのタイムアウトが不正 (got: $SESSION_START_TIMEOUT)"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト16: settings.jsonが有効なJSONである
+if jq empty "$SETTINGS_FILE" 2>/dev/null; then
+    echo -e "${GREEN}✓ PASS${NC}: settings.jsonが有効なJSONである"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: settings.jsonが有効なJSONでない"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト17: UserPromptSubmitフックが定義されている
+if jq -e '.hooks.UserPromptSubmit' "$SETTINGS_FILE" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ PASS${NC}: settings.jsonにUserPromptSubmitフックが定義されている"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: settings.jsonにUserPromptSubmitフックが定義されていない"
+    FAILED=$((FAILED + 1))
+fi
+
+# テスト18: PostToolUseフックにEdit|Writeマッチャーが定義されている
+POST_TOOL_MATCHER=$(jq -r '.hooks.PostToolUse[0].matcher' "$SETTINGS_FILE" 2>/dev/null)
+if [ "$POST_TOOL_MATCHER" = "Edit|Write" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: PostToolUseフックにEdit|Writeマッチャーが定義されている"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: PostToolUseマッチャーが不正 (got: $POST_TOOL_MATCHER)"
     FAILED=$((FAILED + 1))
 fi
 
@@ -1023,11 +1207,11 @@ fi
 cd "$TEST_DIR"
 rm -rf .claude .isac.yaml
 "$BIN_DIR/isac" init test-auto-claude --yes 2>/dev/null
-if [ -d "$TEST_DIR/.claude" ] && [ -f "$TEST_DIR/.claude/settings.yaml" ]; then
-    echo -e "${GREEN}✓ PASS${NC}: isac init --yesで.claude/settings.yamlが作成される"
+if [ -d "$TEST_DIR/.claude" ] && [ -f "$TEST_DIR/.claude/settings.json" ]; then
+    echo -e "${GREEN}✓ PASS${NC}: isac init --yesで.claude/settings.jsonが作成される"
     PASSED=$((PASSED + 1))
 else
-    echo -e "${RED}✗ FAIL${NC}: isac init --yesで.claude/が作成されなかった"
+    echo -e "${RED}✗ FAIL${NC}: isac init --yesで.claude/settings.jsonが作成されなかった"
     FAILED=$((FAILED + 1))
 fi
 
@@ -1068,21 +1252,36 @@ echo "----------------------------------------"
 echo "MCP設定非生成 テスト"
 echo "----------------------------------------"
 
-# テスト10: isac init で生成される settings.yaml に mcpServers が含まれないこと
+# テスト10: isac init で生成される settings.json に mcpServers が含まれないこと
 cd "$TEST_DIR"
 rm -rf .claude .isac.yaml
 "$BIN_DIR/isac" init test-mcp-new --yes 2>/dev/null
-assert_not_file_grep "$TEST_DIR/.claude/settings.yaml" "^mcpServers:" \
-    "settings.yamlにmcpServersが含まれない"
+if jq -e '.mcpServers' "$TEST_DIR/.claude/settings.json" > /dev/null 2>&1; then
+    echo -e "${RED}✗ FAIL${NC}: settings.jsonにmcpServersが含まれている"
+    FAILED=$((FAILED + 1))
+else
+    echo -e "${GREEN}✓ PASS${NC}: settings.jsonにmcpServersが含まれない"
+    PASSED=$((PASSED + 1))
+fi
 
-# テスト11: settings.yaml に ISAC-MANAGED マーカーが含まれないこと
-assert_not_file_grep "$TEST_DIR/.claude/settings.yaml" "ISAC-MANAGED" \
-    "settings.yamlにISAC-MANAGEDマーカーが含まれない"
+# テスト11: settings.json が有効なJSONで hooks が含まれること
+if jq -e '.hooks' "$TEST_DIR/.claude/settings.json" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ PASS${NC}: settings.jsonにhooksが含まれる"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "${RED}✗ FAIL${NC}: settings.jsonにhooksが含まれない"
+    FAILED=$((FAILED + 1))
+fi
 
 # テスト12: --force で再作成しても mcpServers が含まれないこと
 "$BIN_DIR/isac" init test-mcp-force --force --yes 2>/dev/null
-assert_not_file_grep "$TEST_DIR/.claude/settings.yaml" "^mcpServers:" \
-    "--forceでもsettings.yamlにmcpServersが含まれない"
+if jq -e '.mcpServers' "$TEST_DIR/.claude/settings.json" > /dev/null 2>&1; then
+    echo -e "${RED}✗ FAIL${NC}: --forceでもsettings.jsonにmcpServersが含まれている"
+    FAILED=$((FAILED + 1))
+else
+    echo -e "${GREEN}✓ PASS${NC}: --forceでもsettings.jsonにmcpServersが含まれない"
+    PASSED=$((PASSED + 1))
+fi
 
 echo ""
 

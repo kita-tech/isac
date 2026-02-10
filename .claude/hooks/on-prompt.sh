@@ -7,14 +7,16 @@
 
 set -e
 
-# 引数からクエリを取得
-QUERY="${1:-}"
+# stdin JSON から prompt を取得（公式 hooks 仕様）
+INPUT=$(cat)
+QUERY=$(echo "$INPUT" | jq -r '.prompt // ""' 2>/dev/null || echo "")
 
 # 環境変数
 ISAC_GLOBAL_DIR="${ISAC_GLOBAL_DIR:-$HOME/.isac}"
 MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 MAX_TOKENS="${MEMORY_MAX_TOKENS:-2000}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_log.sh"
 
 # グローバル設定からMemory URLを取得
 if [ -z "${MEMORY_SERVICE_URL:-}" ] && [ -f "${ISAC_GLOBAL_DIR}/config.yaml" ]; then
@@ -26,6 +28,7 @@ fi
 
 # クエリが空の場合はスキップ
 if [ -z "$QUERY" ]; then
+    isac_log "on-prompt" "SKIP reason=empty_query"
     exit 0
 fi
 
@@ -45,6 +48,7 @@ fi
 
 # Memory Serviceが起動していない場合はスキップ
 if ! curl -s --connect-timeout 1 "$MEMORY_URL/health" > /dev/null 2>&1; then
+    isac_log "on-prompt" "SKIP reason=memory_down"
     exit 0
 fi
 
@@ -106,11 +110,13 @@ fi
 
 # レスポンスが空または無効な場合はスキップ
 if [ -z "$CONTEXT" ] || [ "$CONTEXT" = "null" ] || [ "$CONTEXT" = "{}" ]; then
+    isac_log "on-prompt" "SKIP reason=empty_response"
     exit 0
 fi
 
 # JSONパースエラーチェック
 if ! echo "$CONTEXT" | jq empty 2>/dev/null; then
+    isac_log "on-prompt" "SKIP reason=json_error"
     exit 0
 fi
 
@@ -163,3 +169,5 @@ if [ "$TOKENS" != "0" ] && [ "$TOKENS" != "null" ]; then
     echo "" >&2
     echo "[ISAC Memory: project=$PROJECT_ID ($PROJECT_SOURCE)$TEAM_INFO, ${TOKENS} tokens]" >&2
 fi
+
+isac_log "on-prompt" "OK project=$PROJECT_ID tokens=${TOKENS:-0} query_len=${#QUERY}"

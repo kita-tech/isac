@@ -6,11 +6,8 @@
 # Event: Stop
 #
 # 使用方法:
-#   settings.yaml で以下のように設定:
-#   hooks:
-#     Stop:
-#       - type: prompt
-#         prompt_file: .claude/hooks/on-stop.sh
+#   settings.json で Stop hook として設定（Phase 2 で対応予定）
+#   現在は手動実行または /isac-save-memory 経由で使用
 #
 # 出力形式:
 #   Claudeが以下のJSON形式で出力し、後続処理でMemory Serviceに保存

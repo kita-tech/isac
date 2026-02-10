@@ -725,7 +725,7 @@ Claudeが今回の作業を分析して出力:
 }
 
 # 方法2: Stop Hook (prompt type) で自動実行
-# settings.yaml で設定すると、タスク完了時に自動で分類
+# settings.json で設定すると、タスク完了時に自動で分類
 ```
 
 **技術的な仕組み**:

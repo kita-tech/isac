@@ -6,13 +6,15 @@
 
 set -e
 
-# 引数からファイルパスを取得
-FILE_PATH="${1:-}"
+# stdin JSON から file_path を取得（公式 hooks 仕様）
+INPUT=$(cat)
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null || echo "")
 
 # 環境変数
 ISAC_GLOBAL_DIR="${ISAC_GLOBAL_DIR:-$HOME/.isac}"
 MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/_log.sh"
 
 # グローバル設定からMemory URLを取得
 if [ -z "${MEMORY_SERVICE_URL:-}" ] && [ -f "${ISAC_GLOBAL_DIR}/config.yaml" ]; then
@@ -24,11 +26,13 @@ fi
 
 # ファイルパスが空の場合はスキップ
 if [ -z "$FILE_PATH" ]; then
+    isac_log "post-edit" "SKIP reason=empty_path"
     exit 0
 fi
 
 # Memory Serviceが起動していない場合はスキップ
 if ! curl -s --connect-timeout 1 "$MEMORY_URL/health" > /dev/null 2>&1; then
+    isac_log "post-edit" "SKIP reason=memory_down"
     exit 0
 fi
 
@@ -51,6 +55,7 @@ DIRNAME=$(dirname "$FILE_PATH")
 case "$FILENAME" in
     .env|.env.*|*.pem|*.key|credentials.*|secrets.*|*secret*|*credential*)
         # 機密ファイルは記録しない
+        isac_log "post-edit" "SKIP reason=sensitive file=$FILENAME"
         exit 0
         ;;
 esac
@@ -267,3 +272,5 @@ PAYLOAD=$(jq -n \
 curl -s --max-time 3 -X POST "$MEMORY_URL/store" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" > /dev/null 2>&1 || true
+
+isac_log "post-edit" "OK project=$PROJECT_ID file=$FILENAME category=$AUTO_CATEGORY"

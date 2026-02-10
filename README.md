@@ -100,7 +100,7 @@ claude
 ├── .isac.yaml                 # プロジェクトID設定
 ├── .isac.secrets.yaml.example # シークレット設定テンプレート（自動生成）
 └── .claude/                   # Claude Code CLI設定（自動作成）
-    ├── settings.yaml          # Hooks設定ファイル（詳細コメント付き）
+    ├── settings.json          # Hooks設定ファイル（JSON形式）
     ├── hooks/                 # ~/.isac/hooks/ へのシンボリックリンク
     └── skills/                # ~/.isac/skills/ へのシンボリックリンク
 ```
@@ -116,7 +116,7 @@ claude
 
 5. **Memory Service 接続確認**
 
-> **Note**: `settings.yaml` はHooks設定用です。MCPサーバーは `claude mcp add --scope user` で `~/.claude.json` に登録されます（詳細は [CLAUDE.md](CLAUDE.md) を参照）。
+> **Note**: `settings.json` はHooks設定用です。MCPサーバーは `claude mcp add --scope user` で `~/.claude.json` に登録されます（詳細は [CLAUDE.md](CLAUDE.md) を参照）。
 
 > **チーム開発での注意**: `hooks/` と `skills/` はシンボリックリンクなので、Gitにはコミットされません。チームメンバーは各自 `isac init --force` を実行して自分の環境にリンクを作成してください。
 
@@ -275,7 +275,7 @@ isac/
 ├── bin/
 │   └── isac                    # メインCLI
 ├── .claude/
-│   ├── settings.yaml           # Hooks設定（MCPサーバーは~/.claude.jsonで管理）
+│   ├── settings.json           # Hooks設定（MCPサーバーは~/.claude.jsonで管理）
 │   ├── hooks/
 │   │   ├── on-prompt.sh        # 記憶検索
 │   │   ├── on-stop.sh          # タスク完了時のAI分類プロンプト

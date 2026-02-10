@@ -109,6 +109,7 @@ isac/
 │   └── isac               # メインCLI
 ├── .claude/               # Claude Code CLI 設定
 │   ├── hooks/
+│   │   ├── _log.sh                  # 共有ログ関数
 │   │   ├── on-session-start.sh  # セッション開始時の軽量ステータス表示
 │   │   ├── on-prompt.sh         # 記憶検索
 │   │   ├── on-stop.sh           # タスク完了時のAI分類プロンプト
@@ -130,6 +131,7 @@ isac/
 ~/.isac/                   # グローバル設定（isac install で作成）
 ├── config.yaml
 ├── hooks/
+├── logs/                  # Hooks実行ログ（ISAC開発時のみ記録）
 └── skills/
 ```
 
@@ -412,7 +414,7 @@ open htmlcov/index.html
 
 - RDBMSを使用している限り、複数人が同時に記憶を追加しても技術的な同期問題は発生しない（SQLiteのACID特性で保証）
 - チーム開発での課題は「意味的な競合」や「重複データ」であり、アプリケーションレベルの問題
-- MCP サーバーは `settings.yaml` ではなく `claude mcp add --scope user` で `~/.claude.json` に登録する（Claude Code CLI が `settings.yaml` の `mcpServers` を読み込まないため）
+- MCP サーバーは `settings.json` ではなく `claude mcp add --scope user` で `~/.claude.json` に登録する（Claude Code CLI が `settings.json` の `mcpServers` を読み込まないため）
 - MCP APIキーはプロジェクトごとに `.isac.secrets.yaml` で管理する（`.isac.secrets.yaml` > 環境変数の優先順位）
 - `.isac.secrets.yaml` は `KEY: VALUE` フラットYAMLのみサポート（ネスト非対応）
 - 許可キーをホワイトリストで制限（`NOTION_API_TOKEN`, `CONTEXT7_API_KEY`のみ。環境変数インジェクション防止）
