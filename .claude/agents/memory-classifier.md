@@ -28,6 +28,21 @@ grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'
 | work | 実装作業、バグ修正、リファクタリング | 「ログイン機能を実装」「バグ修正」|
 | knowledge | 学習した知見、ベストプラクティス | 「FastAPIではasyncが推奨」|
 
+### scope（スコープ）
+
+**原則: 迷ったら `project` を選択すること。**
+
+| スコープ | 説明 | 判定基準 |
+|---------|------|---------|
+| project | このプロジェクト固有の知見（デフォルト） | プロジェクト名や固有の設計判断が主語 |
+| global | 他プロジェクトでも参照すべき汎用的な技術知見 | ツール/言語/FWの仕様・制約・ベストプラクティスが主語 |
+
+**判定ヒント:**
+- 主語がツール・言語・フレームワークなら → `global`
+  - 例: 「FastAPIではasyncが推奨」「pickleはRCEリスクがあるのでJSONを使う」
+- 主語がプロジェクト名・固有機能なら → `project`
+  - 例: 「ISACのhooksは5秒以内に完了すべき」「このプロジェクトではReactを採用」
+
 ### category（カテゴリ）
 | カテゴリ | 説明 |
 |---------|------|
@@ -60,6 +75,7 @@ grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//' | tr -d '"'
 ## 保存API
 
 ```bash
+# project スコープの場合
 curl -X POST "http://localhost:8100/store" \
   -H "Content-Type: application/json" \
   -d '{
@@ -71,14 +87,28 @@ curl -X POST "http://localhost:8100/store" \
     "category": "backend",
     "tags": ["python", "feature"]
   }'
+
+# global スコープの場合（scope_id は null）
+curl -X POST "http://localhost:8100/store" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "汎用的な技術知見",
+    "type": "knowledge",
+    "importance": 0.7,
+    "scope": "global",
+    "scope_id": null,
+    "category": "backend",
+    "tags": ["python", "best-practice"]
+  }'
 ```
 
 ## 処理フロー
 
 1. メインエージェントから作業内容の概要を受け取る
-2. 内容を分析して type, category, tags, importance を決定
+2. 内容を分析して type, scope, category, tags, importance を決定
+   - scope判定: 主語がツール/言語/FWなら `global`、プロジェクト固有なら `project`。迷ったら `project`
 3. 50文字以内の要約を作成
-4. Memory Serviceに保存
+4. Memory Serviceに保存（globalの場合はscope_id=null）
 5. 保存結果を報告
 
 ## スキップ条件
@@ -98,6 +128,7 @@ curl -X POST "http://localhost:8100/store" \
 
 - **内容**: {要約}
 - **タイプ**: {type}
+- **スコープ**: {scope}
 - **カテゴリ**: {category}
 - **タグ**: {tags}
 - **重要度**: {importance}
