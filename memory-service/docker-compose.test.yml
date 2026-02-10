@@ -5,7 +5,7 @@ version: '3.8'
 # 認証を有効化し、テスト用の Admin API キーを設定
 
 services:
-  memory:
+  memory-test:
     build: .
     container_name: isac-memory-test
     ports:

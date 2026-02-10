@@ -280,9 +280,12 @@ DELETE /memory/{id}
 
 ### テスト環境の起動
 
+> **注意**: テスト用 `docker-compose.test.yml` のサービス名は `memory-test`（本番は `memory`）です。
+> 手動起動時は `-p` フラグでプロジェクト名を分離し、本番コンテナとの干渉を防いでください。
+
 ```bash
 cd memory-service
-docker compose -f docker-compose.test.yml up -d --build
+docker compose -p isac-memory-test -f docker-compose.test.yml up -d --build
 ```
 
 ### テストの実行
@@ -299,5 +302,5 @@ pytest tests/test_permission.py -v
 
 ```bash
 cd memory-service
-docker compose -f docker-compose.test.yml down -v
+docker compose -p isac-memory-test -f docker-compose.test.yml down -v
 ```

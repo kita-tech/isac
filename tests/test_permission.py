@@ -5,7 +5,7 @@ ISAC Memory Service 権限テスト
 
 実行方法:
     cd memory-service
-    docker compose -f docker-compose.test.yml up -d --build
+    docker compose -p isac-memory-test -f docker-compose.test.yml up -d --build
     cd ..
     pytest tests/test_permission.py -v
 """
