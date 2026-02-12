@@ -360,8 +360,10 @@ gh pr create --title "Add [hook-name] hook" --body "..."
 | CLI コマンド追加・変更 | CLAUDE.md（コマンドセクション） |
 | Skill 追加・変更 | CLAUDE.md（Skills一覧）、SKILL.md |
 | Hooks 追加・変更 | CLAUDE.md（ディレクトリ構成） |
-| API 追加・変更 | CLAUDE.md（API セクション）、memory-service/README.md |
+| API 追加・変更 | CLAUDE.md（API セクション）、[docs/MEMORY_SERVICE.md](docs/MEMORY_SERVICE.md) |
 | 設計決定 | CLAUDE.md（技術的決定事項） |
+| Memory Service アーキテクチャ | [docs/MEMORY_SERVICE.md](docs/MEMORY_SERVICE.md) |
+| テスト設計 | [docs/TEST_DESIGN_GUIDE.md](docs/TEST_DESIGN_GUIDE.md) |
 
 ### 3. PR作成前チェックリスト
 
