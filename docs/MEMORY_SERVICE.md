@@ -140,6 +140,29 @@ Memory Serviceは、ISACシステムの中核を担う**長期記憶管理サー
 > 「SQLiteを選んだのは意図的。PostgreSQLやRedisは運用コストが高い。
 > ISACの規模（チーム〜数十人）ならSQLiteで十分。必要になったら移行すればいい」
 
+### なぜ MCP ではなく REST API か？
+
+Claude Code は Plugin システムで MCP サーバーをバンドル配布できます。Memory Service も MCP サーバー化すれば Plugin に統合できるように見えますが、**意図的に REST API（HTTP）を維持**しています。
+
+| アクセス元 | MCP ツール | curl（REST API） |
+|-----------|-----------|-----------------|
+| メイン会話 | OK | OK |
+| フォアグラウンド サブエージェント | OK | OK |
+| **バックグラウンド サブエージェント** | **使用不可** | OK |
+| **Hooks（シェルスクリプト）** | **使用不可** | OK |
+| 外部スクリプト / CLI | 使用不可 | OK |
+
+**根拠**:
+
+1. **バックグラウンドサブエージェントの制約**: Claude Code 公式ドキュメントに「MCP tools are not available in background subagents」と明記されている。ISAC の `/isac-autopilot` はサブエージェントで Phase 0〜4 を実行するため、MCP 化すると記憶にアクセスできなくなる
+2. **Hooks からのアクセス**: `on-prompt.sh`、`post-edit.sh` 等の Hooks はシェルスクリプトで実行される。MCP は LLM のツールコール経由でのみ利用可能なため、Hooks から直接呼べない
+3. **プログラマティックアクセス**: REST API なら `curl` 一つであらゆるコンテキストからアクセスできる。MCP は「LLM がツールとして呼ぶ」ユースケース向けであり、プログラマティックアクセスには不向き
+4. **クラウド移行時の互換性**: 将来クラウド DB に移行する際も、REST API インターフェースを維持すれば既存の Hooks・Skills・CLI はすべてそのまま動作する
+
+**Plugin との関係**: Skills / Hooks / 外部 MCP（Notion, Context7）は Plugin 化の対象だが、Memory Service は REST API サーバーとして独立運用する（ハイブリッド構成）。
+
+> 決定日: 2026-02-12 | Memory Service 決定 ID: 20faa1c6
+
 ### データフロー
 
 ```
