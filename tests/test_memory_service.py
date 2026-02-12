@@ -563,6 +563,156 @@ class TestStats:
         assert "project_id" in data
         assert "stats" in data
 
+    def test_stats_excludes_deprecated_by_default(self):
+        """statsがデフォルトでdeprecated記憶を除外してカウントする"""
+        project_id = f"stats-deprecated-test-{uuid.uuid4().hex[:8]}"
+
+        # 通常の記憶を2件保存
+        for i in range(2):
+            requests.post(f"{BASE_URL}/store", json={
+                "content": f"通常の記憶 {i} {uuid.uuid4()}",
+                "type": "work",
+                "scope": "project",
+                "scope_id": project_id
+            })
+
+        # 廃止する記憶を1件保存
+        dep_response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"廃止される記憶 {uuid.uuid4()}",
+            "type": "work",
+            "scope": "project",
+            "scope_id": project_id
+        })
+        dep_id = dep_response.json()["id"]
+
+        # 廃止する
+        requests.patch(
+            f"{BASE_URL}/memory/{dep_id}/deprecate",
+            json={"deprecated": True}
+        )
+
+        # デフォルトのstatsでは廃止済みを除外
+        response = requests.get(f"{BASE_URL}/stats/{project_id}")
+        assert response.status_code == 200
+        data = response.json()
+        stats = data["stats"]
+        project_work = stats.get("project/work", {})
+        assert project_work.get("count", 0) == 2
+
+    def test_stats_includes_deprecated_when_requested(self):
+        """include_deprecated=trueでdeprecated記憶も含めてカウントする"""
+        project_id = f"stats-incl-dep-test-{uuid.uuid4().hex[:8]}"
+
+        # 通常の記憶を1件保存
+        requests.post(f"{BASE_URL}/store", json={
+            "content": f"通常の記憶 {uuid.uuid4()}",
+            "type": "knowledge",
+            "scope": "project",
+            "scope_id": project_id
+        })
+
+        # 廃止する記憶を1件保存
+        dep_response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"廃止される記憶 {uuid.uuid4()}",
+            "type": "knowledge",
+            "scope": "project",
+            "scope_id": project_id
+        })
+        dep_id = dep_response.json()["id"]
+
+        # 廃止する
+        requests.patch(
+            f"{BASE_URL}/memory/{dep_id}/deprecate",
+            json={"deprecated": True}
+        )
+
+        # include_deprecated=true で全件カウント
+        response = requests.get(
+            f"{BASE_URL}/stats/{project_id}",
+            params={"include_deprecated": "true"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        stats = data["stats"]
+        project_knowledge = stats.get("project/knowledge", {})
+        assert project_knowledge.get("count", 0) == 2
+
+    def test_stats_all_deprecated_returns_empty(self):
+        """全記憶がdeprecatedのプロジェクトではstatsが空になる"""
+        project_id = f"stats-all-dep-test-{uuid.uuid4().hex[:8]}"
+
+        # 記憶を1件保存して即廃止
+        dep_response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"廃止される記憶 {uuid.uuid4()}",
+            "type": "decision",
+            "scope": "project",
+            "scope_id": project_id
+        })
+        dep_id = dep_response.json()["id"]
+
+        requests.patch(
+            f"{BASE_URL}/memory/{dep_id}/deprecate",
+            json={"deprecated": True}
+        )
+
+        # デフォルトでは空のstats
+        response = requests.get(f"{BASE_URL}/stats/{project_id}")
+        assert response.status_code == 200
+        data = response.json()
+        stats = data["stats"]
+        # プロジェクト固有のstatsが存在しないことを確認
+        assert "project/decision" not in stats
+
+    def test_stats_mixed_deprecated_and_active(self):
+        """deprecatedと非deprecatedが混在する場合の正確なカウント"""
+        project_id = f"stats-mixed-dep-test-{uuid.uuid4().hex[:8]}"
+
+        # decision: 3件保存して1件廃止（結果: 2件）
+        dep_ids = []
+        for i in range(3):
+            resp = requests.post(f"{BASE_URL}/store", json={
+                "content": f"決定 {i} {uuid.uuid4()}",
+                "type": "decision",
+                "scope": "project",
+                "scope_id": project_id
+            })
+            dep_ids.append(resp.json()["id"])
+
+        requests.patch(
+            f"{BASE_URL}/memory/{dep_ids[0]}/deprecate",
+            json={"deprecated": True}
+        )
+
+        # work: 2件保存して2件廃止（結果: 0件）
+        for i in range(2):
+            resp = requests.post(f"{BASE_URL}/store", json={
+                "content": f"作業 {i} {uuid.uuid4()}",
+                "type": "work",
+                "scope": "project",
+                "scope_id": project_id
+            })
+            requests.patch(
+                f"{BASE_URL}/memory/{resp.json()['id']}/deprecate",
+                json={"deprecated": True}
+            )
+
+        # デフォルト: deprecated除外
+        response = requests.get(f"{BASE_URL}/stats/{project_id}")
+        assert response.status_code == 200
+        stats = response.json()["stats"]
+        assert stats.get("project/decision", {}).get("count", 0) == 2
+        assert "project/work" not in stats  # 全て廃止済みなので存在しない
+
+        # include_deprecated=true: 全件
+        response = requests.get(
+            f"{BASE_URL}/stats/{project_id}",
+            params={"include_deprecated": "true"}
+        )
+        assert response.status_code == 200
+        stats = response.json()["stats"]
+        assert stats.get("project/decision", {}).get("count", 0) == 3
+        assert stats.get("project/work", {}).get("count", 0) == 2
+
 
 class TestExport:
     """エクスポートのテスト"""
