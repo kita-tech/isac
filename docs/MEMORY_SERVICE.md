@@ -1187,7 +1187,8 @@ curl http://localhost:8100/health
   "status": "healthy",
   "service": "isac-memory",
   "version": "2.1.0",
-  "auth_required": false
+  "auth_required": false,
+  "uptime_seconds": 123.4
 }
 ```
 
