@@ -31,6 +31,46 @@ class TestHealthCheck:
         assert data["service"] == "isac-memory"
         assert "version" in data
 
+    def test_health_uptime_seconds_exists(self):
+        """GET /health のレスポンスに uptime_seconds フィールドが含まれる"""
+        response = requests.get(f"{BASE_URL}/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert "uptime_seconds" in data
+
+    def test_health_uptime_seconds_is_number(self):
+        """uptime_seconds が数値型である"""
+        response = requests.get(f"{BASE_URL}/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data["uptime_seconds"], (int, float))
+
+    def test_health_uptime_seconds_non_negative(self):
+        """uptime_seconds が 0 以上である"""
+        response = requests.get(f"{BASE_URL}/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["uptime_seconds"] >= 0
+
+    def test_health_uptime_seconds_reasonable_value(self):
+        """uptime_seconds がテスト環境で妥当な値である（1時間未満）"""
+        response = requests.get(f"{BASE_URL}/health")
+        assert response.status_code == 200
+        data = response.json()
+        # テスト環境ではサーバー起動から1時間以内を想定
+        assert data["uptime_seconds"] < 3600
+
+    def test_health_existing_fields_preserved(self):
+        """既存フィールド（status, service, version, auth_required）が維持されている"""
+        response = requests.get(f"{BASE_URL}/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+        assert "service" in data
+        assert "version" in data
+        assert "auth_required" in data
+        assert "uptime_seconds" in data
+
 
 class TestMemoryStore:
     """メモリ保存のテスト"""

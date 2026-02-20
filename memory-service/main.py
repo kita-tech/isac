@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import sqlite3
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from enum import Enum
@@ -26,6 +27,8 @@ import tiktoken
 # ============================================================
 # アプリケーション設定
 # ============================================================
+
+_START_TIME = time.time()
 
 app = FastAPI(
     title="ISAC Memory Service",
@@ -731,7 +734,8 @@ async def health():
         "status": "healthy",
         "service": "isac-memory",
         "version": "2.1.0",
-        "auth_required": REQUIRE_AUTH
+        "auth_required": REQUIRE_AUTH,
+        "uptime_seconds": round(time.time() - _START_TIME, 1)
     }
 
 
