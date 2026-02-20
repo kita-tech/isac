@@ -811,7 +811,8 @@ cmd_status() {
     echo ""
 
     # バージョン情報（Git管理下の場合のみ）
-    if [ -d "${ISAC_SOURCE_DIR}/.git" ]; then
+    # -e: ファイルでもディレクトリでも存在すれば真（git worktree では .git はファイル）
+    if [ -e "${ISAC_SOURCE_DIR}/.git" ]; then
         local local_head local_date remote_head commits_behind
         local_head=$(git -C "${ISAC_SOURCE_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
         local_date=$(git -C "${ISAC_SOURCE_DIR}" log -1 --format=%cd --date=short 2>/dev/null || echo "unknown")
