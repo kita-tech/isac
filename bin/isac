@@ -154,13 +154,13 @@ cmd_install() {
     echo ""
 
     # ディレクトリ作成
-    echo -e "${GREEN}[1/5] Creating ~/.isac/ directory...${NC}"
+    echo -e "${GREEN}[1/7] Creating ~/.isac/ directory...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}"
     mkdir -p "${ISAC_GLOBAL_DIR}/logs"
     chmod 700 "${ISAC_GLOBAL_DIR}"
 
     # Hooks コピー
-    echo -e "${GREEN}[2/5] Installing hooks...${NC}"
+    echo -e "${GREEN}[2/7] Installing hooks...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/hooks"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/hooks" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/hooks/"*.sh "${ISAC_GLOBAL_DIR}/hooks/" 2>/dev/null || true
@@ -171,7 +171,7 @@ cmd_install() {
     fi
 
     # Skills コピー（ディレクトリ構造）
-    echo -e "${GREEN}[3/5] Installing skills...${NC}"
+    echo -e "${GREEN}[3/7] Installing skills...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/skills"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
         # 既存のスキルを削除して再コピー
@@ -189,7 +189,7 @@ cmd_install() {
     fi
 
     # Agents コピー（SubAgent定義）
-    echo -e "${GREEN}[4/5] Installing agents...${NC}"
+    echo -e "${GREEN}[4/7] Installing agents...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/agents"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/agents" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/agents/"*.md "${ISAC_GLOBAL_DIR}/agents/" 2>/dev/null || true
@@ -199,7 +199,7 @@ cmd_install() {
     fi
 
     # CLAUDE.md コピー（~/.isac/CLAUDE.md → ~/.claude/CLAUDE.md）
-    echo -e "${GREEN}[5/6] Setting up CLAUDE.md...${NC}"
+    echo -e "${GREEN}[5/7] Setting up CLAUDE.md...${NC}"
     if [ -f "${ISAC_SOURCE_DIR}/templates/CLAUDE.md.template" ]; then
         # テンプレートから~/.isac/CLAUDE.md を作成（言語設定セクションのみ抽出）
         if [ ! -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" ]; then
@@ -221,8 +221,12 @@ CLAUDEMD_EOF
         echo -e "  Copied to ~/.claude/CLAUDE.md"
     fi
 
+    # Statusline セットアップ
+    echo -e "${GREEN}[6/7] Setting up statusline...${NC}"
+    setup_statusline
+
     # 設定ファイル作成
-    echo -e "${GREEN}[6/6] Creating config.yaml...${NC}"
+    echo -e "${GREEN}[7/7] Creating config.yaml...${NC}"
     if [ ! -f "${ISAC_GLOBAL_DIR}/config.yaml" ]; then
         cat > "${ISAC_GLOBAL_DIR}/config.yaml" << 'EOF'
 # ISAC Global Configuration
@@ -268,7 +272,7 @@ cmd_update() {
     fi
 
     # Hooks 更新
-    echo -e "${GREEN}[1/4] Updating hooks...${NC}"
+    echo -e "${GREEN}[1/5] Updating hooks...${NC}"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/hooks" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/hooks/"*.sh "${ISAC_GLOBAL_DIR}/hooks/" 2>/dev/null || true
         chmod +x "${ISAC_GLOBAL_DIR}/hooks/"*.sh 2>/dev/null || true
@@ -276,7 +280,7 @@ cmd_update() {
     fi
 
     # Skills 更新（ディレクトリ構造）
-    echo -e "${GREEN}[2/4] Updating skills...${NC}"
+    echo -e "${GREEN}[2/5] Updating skills...${NC}"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/skills" ]; then
         rm -rf "${ISAC_GLOBAL_DIR}/skills/"*
         cp -rf "${ISAC_SOURCE_DIR}/.claude/skills/"* "${ISAC_GLOBAL_DIR}/skills/" 2>/dev/null || true
@@ -290,7 +294,7 @@ cmd_update() {
     fi
 
     # Agents 更新
-    echo -e "${GREEN}[3/4] Updating agents...${NC}"
+    echo -e "${GREEN}[3/5] Updating agents...${NC}"
     mkdir -p "${ISAC_GLOBAL_DIR}/agents"
     if [ -d "${ISAC_SOURCE_DIR}/.claude/agents" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/agents/"*.md "${ISAC_GLOBAL_DIR}/agents/" 2>/dev/null || true
@@ -298,7 +302,7 @@ cmd_update() {
     fi
 
     # CLAUDE.md 更新（~/.isac/CLAUDE.md → ~/.claude/CLAUDE.md）
-    echo -e "${GREEN}[4/4] Updating CLAUDE.md...${NC}"
+    echo -e "${GREEN}[4/5] Updating CLAUDE.md...${NC}"
     if [ -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" ]; then
         mkdir -p "${HOME}/.claude"
         cp -f "${ISAC_GLOBAL_DIR}/CLAUDE.md" "${HOME}/.claude/CLAUDE.md"
@@ -306,6 +310,10 @@ cmd_update() {
     else
         echo -e "  ${YELLOW}~/.isac/CLAUDE.md not found, skipping${NC}"
     fi
+
+    # Statusline 更新
+    echo -e "${GREEN}[5/5] Updating statusline...${NC}"
+    setup_statusline
 
     echo ""
     echo -e "${GREEN}Update complete!${NC}"
@@ -610,6 +618,39 @@ setup_mcp_servers() {
         -e "DEFAULT_MINIMUM_TOKENS=10000" \
         -e "CONTEXT7_API_KEY=${CONTEXT7_API_KEY}" \
         context7 -- npx -y @upstash/context7-mcp
+}
+
+# Statusline セットアップ（install/update 共通）
+setup_statusline() {
+    local source_script="${ISAC_SOURCE_DIR}/statusline/statusline-command.sh"
+    local dest_script="${HOME}/.claude/statusline-command.sh"
+    local settings_file="${HOME}/.claude/settings.json"
+
+    # スクリプトのコピー
+    if [ -f "${source_script}" ]; then
+        mkdir -p "${HOME}/.claude"
+        cp -f "${source_script}" "${dest_script}"
+        chmod +x "${dest_script}"
+        echo -e "  Copied statusline-command.sh to ~/.claude/"
+    else
+        echo -e "  ${YELLOW}Warning: ${source_script} not found${NC}"
+        return 0
+    fi
+
+    # settings.json に statusLine 設定をマージ
+    local statusline_config='{"type":"command","command":"bash ~/.claude/statusline-command.sh"}'
+
+    if [ -f "${settings_file}" ]; then
+        # 既存ファイルに statusLine キーを追加/更新
+        local tmp_file
+        tmp_file=$(mktemp)
+        jq --argjson sl "${statusline_config}" '.statusLine = $sl' "${settings_file}" > "${tmp_file}" && mv "${tmp_file}" "${settings_file}"
+        echo -e "  Updated statusLine in ~/.claude/settings.json"
+    else
+        # 新規作成
+        jq -n --argjson sl "${statusline_config}" '{"statusLine": $sl}' > "${settings_file}"
+        echo -e "  Created ~/.claude/settings.json with statusLine"
+    fi
 }
 
 # settings.json を新規作成（Claude Code CLI 公式形式）
