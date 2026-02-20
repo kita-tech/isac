@@ -45,7 +45,8 @@ UPDATE_STATUS=""
 ISAC_SOURCE_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ISAC_CACHE_FILE="${ISAC_GLOBAL_DIR}/.version_cache"
 
-if [ -d "${ISAC_SOURCE_DIR}/.git" ] && [ -f "${ISAC_CACHE_FILE}" ]; then
+# -e: ファイルでもディレクトリでも存在すれば真（git worktree では .git はファイル）
+if [ -e "${ISAC_SOURCE_DIR}/.git" ] && [ -f "${ISAC_CACHE_FILE}" ]; then
     LOCAL_HEAD=$(git -C "${ISAC_SOURCE_DIR}" rev-parse --short HEAD 2>/dev/null || true)
     CACHED_REMOTE=$(cat "${ISAC_CACHE_FILE}" 2>/dev/null || true)
 

@@ -194,7 +194,7 @@ fi
 echo ""
 
 # ========================================
-# テスト6: プロジェクトIDバリデーション
+# テスト6: プロジェクトIDバリデーション（init経由）
 # ========================================
 echo -e "${BLUE}テスト6: プロジェクトIDバリデーション${NC}"
 echo "----------------------------------------"
@@ -204,7 +204,7 @@ TEST_DIR=$(mktemp -d)
 cd "$TEST_DIR"
 
 # 6-1. 空白を含むプロジェクトIDはエラー
-OUTPUT=$("$ISAC_CMD" switch "my project" 2>&1)
+OUTPUT=$("$ISAC_CMD" init "my project" --yes 2>&1)
 if echo "$OUTPUT" | grep -q "cannot contain spaces"; then
     test_pass "空白を含むプロジェクトIDはエラーになる"
 else
@@ -212,7 +212,7 @@ else
 fi
 
 # 6-2. スラッシュを含むプロジェクトIDはエラー
-OUTPUT=$("$ISAC_CMD" switch "my/project" 2>&1)
+OUTPUT=$("$ISAC_CMD" init "my/project" --yes 2>&1)
 if echo "$OUTPUT" | grep -q "cannot contain spaces, slashes"; then
     test_pass "スラッシュを含むプロジェクトIDはエラーになる"
 else
@@ -220,7 +220,7 @@ else
 fi
 
 # 6-3. ドットで始まるプロジェクトIDはエラー
-OUTPUT=$("$ISAC_CMD" switch ".hidden" 2>&1)
+OUTPUT=$("$ISAC_CMD" init ".hidden" --yes 2>&1)
 if echo "$OUTPUT" | grep -q "cannot start or end with"; then
     test_pass "ドットで始まるプロジェクトIDはエラーになる"
 else
@@ -228,7 +228,7 @@ else
 fi
 
 # 6-4. ハイフンで終わるプロジェクトIDはエラー
-OUTPUT=$("$ISAC_CMD" switch "project-" 2>&1)
+OUTPUT=$("$ISAC_CMD" init "project-" --yes 2>&1)
 if echo "$OUTPUT" | grep -q "cannot start or end with"; then
     test_pass "ハイフンで終わるプロジェクトIDはエラーになる"
 else
@@ -238,8 +238,9 @@ fi
 # 6-5. 64文字のプロジェクトIDは許可される（境界値）
 LONG_ID_64=""
 for i in $(seq 1 64); do LONG_ID_64="${LONG_ID_64}a"; done
-OUTPUT=$("$ISAC_CMD" switch "$LONG_ID_64" --yes 2>&1)
-if echo "$OUTPUT" | grep -q "Switched to:"; then
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init "$LONG_ID_64" --yes 2>&1)
+if echo "$OUTPUT" | grep -q "Project initialized"; then
     test_pass "64文字のプロジェクトIDは許可される（境界値）"
 else
     test_fail "64文字プロジェクトIDの境界値" "許可されるべきだがエラーになった"
@@ -247,7 +248,7 @@ fi
 
 # 6-6. 65文字のプロジェクトIDはエラー（境界値）
 LONG_ID_65="${LONG_ID_64}a"
-OUTPUT=$("$ISAC_CMD" switch "$LONG_ID_65" 2>&1)
+OUTPUT=$("$ISAC_CMD" init "$LONG_ID_65" --yes 2>&1)
 if echo "$OUTPUT" | grep -q "64 characters or less"; then
     test_pass "65文字のプロジェクトIDはエラーになる（境界値）"
 else
@@ -256,14 +257,15 @@ fi
 
 # 6-7. 特殊文字（&, ?, #）を含むプロジェクトIDはエラー
 for CHAR in '&' '?' '#'; do
-    OUTPUT=$("$ISAC_CMD" switch "test${CHAR}project" 2>&1)
+    OUTPUT=$("$ISAC_CMD" init "test${CHAR}project" --yes 2>&1)
     # これらの文字はURLで特別な意味を持つが、現在のバリデーションでは許可される
     # セキュリティ上問題ないことを確認（URLエンコードされる）
 done
 test_pass "特殊文字を含むプロジェクトIDの動作確認"
 
 # 6-8. シェルメタ文字を含むプロジェクトIDの安全性テスト
-OUTPUT=$("$ISAC_CMD" switch 'test;ls' 2>&1)
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init 'test;ls' --yes 2>&1)
 # セミコロンはバリデーションで許可されるが、コマンドインジェクションにならないことを確認
 if ! echo "$OUTPUT" | grep -qE "^(bin|tests|CLAUDE)"; then
     test_pass "セミコロンを含むプロジェクトIDでコマンドインジェクションが発生しない"
@@ -272,7 +274,8 @@ else
 fi
 
 # 6-9. バッククォートを含むプロジェクトIDの安全性テスト
-OUTPUT=$("$ISAC_CMD" switch 'test`whoami`' 2>&1)
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init 'test`whoami`' --yes 2>&1)
 CURRENT_USER=$(whoami)
 if ! echo "$OUTPUT" | grep -q "$CURRENT_USER"; then
     test_pass "バッククォートを含むプロジェクトIDでコマンド実行が発生しない"
@@ -281,7 +284,8 @@ else
 fi
 
 # 6-10. $() を含むプロジェクトIDの安全性テスト
-OUTPUT=$("$ISAC_CMD" switch 'test$(id)' 2>&1)
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init 'test$(id)' --yes 2>&1)
 if ! echo "$OUTPUT" | grep -q "uid="; then
     test_pass "\$() を含むプロジェクトIDでコマンド実行が発生しない"
 else
@@ -289,11 +293,12 @@ else
 fi
 
 # 6-12. 有効なプロジェクトIDは受け入れられる
-OUTPUT=$("$ISAC_CMD" switch "valid-project_123" --yes 2>&1)
-if echo "$OUTPUT" | grep -q "Switched to:"; then
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init "valid-project_123" --yes 2>&1)
+if echo "$OUTPUT" | grep -q "Project initialized"; then
     test_pass "有効なプロジェクトIDは受け入れられる"
 else
-    test_fail "有効なプロジェクトIDの受け入れ" "Switched to: が見つからない"
+    test_fail "有効なプロジェクトIDの受け入れ" "Project initialized が見つからない"
 fi
 
 # クリーンアップ
@@ -303,47 +308,26 @@ cd "$SCRIPT_DIR"
 echo ""
 
 # ========================================
-# テスト7: switch --yes オプション
+# テスト7: switch コマンドの廃止確認
 # ========================================
-echo -e "${BLUE}テスト7: switch --yes オプション${NC}"
+echo -e "${BLUE}テスト7: switch コマンドの廃止確認${NC}"
 echo "----------------------------------------"
 
-TEST_DIR=$(mktemp -d)
-cd "$TEST_DIR"
-
-# 7-1. --yes オプションで対話なしに切り替え
-OUTPUT=$("$ISAC_CMD" switch "new-test-project" --yes 2>&1)
-if [ $? -eq 0 ] && echo "$OUTPUT" | grep -q "Switched to:"; then
-    test_pass "switch --yes で対話なしに切り替え可能"
+# 7-1. switch コマンドが Unknown command エラーを返す
+OUTPUT=$("$ISAC_CMD" switch "test-project" 2>&1)
+if [ $? -ne 0 ] && echo "$OUTPUT" | grep -q "Unknown command"; then
+    test_pass "switch コマンドが Unknown command エラーを返す"
 else
-    test_fail "switch --yes の動作" "正常終了しない"
+    test_fail "switch コマンド廃止" "Unknown command エラーが返らない"
 fi
 
-# 7-2. -y 短縮形も動作する
-rm -f .isac.yaml
-OUTPUT=$("$ISAC_CMD" switch "another-project" -y 2>&1)
-if [ $? -eq 0 ] && echo "$OUTPUT" | grep -q "Switched to:"; then
-    test_pass "switch -y 短縮形も動作する"
+# 7-2. ヘルプに switch が表示されない
+HELP_OUTPUT=$("$ISAC_CMD" help 2>&1)
+if ! echo "$HELP_OUTPUT" | grep -q "switch"; then
+    test_pass "ヘルプに switch が表示されない"
 else
-    test_fail "switch -y の動作" "正常終了しない"
+    test_fail "ヘルプの switch 表示" "switch がまだヘルプに表示されている"
 fi
-
-# 7-3. .isac.yaml が作成される
-if [ -f ".isac.yaml" ]; then
-    test_pass ".isac.yaml が作成される"
-else
-    test_fail ".isac.yaml の作成" "ファイルが存在しない"
-fi
-
-# 7-4. .isac.yaml に正しいプロジェクトIDが含まれる
-if grep -q "project_id: another-project" .isac.yaml; then
-    test_pass ".isac.yaml に正しいプロジェクトIDが含まれる"
-else
-    test_fail ".isac.yaml の内容" "project_id が正しくない"
-fi
-
-rm -rf "$TEST_DIR"
-cd "$SCRIPT_DIR"
 
 echo ""
 
@@ -399,11 +383,11 @@ else
     test_fail "Init Options の表示" "Init Options: が見つからない"
 fi
 
-# 9-2. Switch Options が表示される
-if echo "$HELP_OUTPUT" | grep -q "Switch Options:"; then
-    test_pass "Switch Options がヘルプに表示される"
+# 9-2. Switch Options が表示されない（廃止済み）
+if ! echo "$HELP_OUTPUT" | grep -q "Switch Options:"; then
+    test_pass "Switch Options がヘルプに表示されない（廃止済み）"
 else
-    test_fail "Switch Options の表示" "Switch Options: が見つからない"
+    test_fail "Switch Options の廃止" "Switch Options: がまだ表示されている"
 fi
 
 # 9-3. 引数なしでもヘルプが表示される
@@ -474,12 +458,12 @@ else
     test_fail "不明なコマンドのエラー" "適切なエラーが返らない"
 fi
 
-# 11-2. switch に引数なしでエラー
+# 11-2. switch が Unknown command エラーを返す（廃止済み）
 OUTPUT=$("$ISAC_CMD" switch 2>&1)
-if [ $? -ne 0 ] && echo "$OUTPUT" | grep -q "Project ID required"; then
-    test_pass "switch に引数なしでエラーが返る"
+if [ $? -ne 0 ] && echo "$OUTPUT" | grep -q "Unknown command"; then
+    test_pass "switch が Unknown command エラーを返す（廃止済み）"
 else
-    test_fail "switch 引数なしのエラー" "適切なエラーが返らない"
+    test_fail "switch 廃止のエラー" "Unknown command エラーが返らない"
 fi
 
 # 11-3. init の不明なオプションでエラー
@@ -851,9 +835,9 @@ cd "$SCRIPT_DIR"
 echo ""
 
 # ========================================
-# テスト16: switch での MCP 再登録
+# テスト16: init での MCP 再登録（secrets存在時）
 # ========================================
-echo -e "${BLUE}テスト16: switch での MCP 再登録${NC}"
+echo -e "${BLUE}テスト16: init での MCP 再登録${NC}"
 echo "----------------------------------------"
 
 TEST_DIR=$(mktemp -d)
@@ -861,23 +845,24 @@ cd "$TEST_DIR"
 
 # 16-1. .isac.secrets.yaml がある場合にMCP更新メッセージ表示
 cat > ".isac.secrets.yaml" << 'EOF'
-NOTION_API_TOKEN: test-token-for-switch
+NOTION_API_TOKEN: test-token-for-init
 EOF
 chmod 600 ".isac.secrets.yaml"
-OUTPUT=$("$ISAC_CMD" switch "mcp-test-project" --yes 2>&1)
+rm -f .isac.yaml
+OUTPUT=$("$ISAC_CMD" init "mcp-test-project" --yes --force 2>&1)
 if echo "$OUTPUT" | grep -q "Setting up MCP servers"; then
     test_pass ".isac.secrets.yaml がある場合にMCP更新が実行される"
 else
-    test_fail "switch MCP更新" "Setting up MCP servers が見つからない"
+    test_fail "init MCP更新" "Setting up MCP servers が見つからない"
 fi
 
-# 16-2. .isac.secrets.yaml がない場合にMCP更新スキップ
+# 16-2. .isac.secrets.yaml がない場合にMCP更新はforce=falseで実行
 rm -f .isac.secrets.yaml .isac.yaml
-OUTPUT=$("$ISAC_CMD" switch "no-mcp-test-project" --yes 2>&1)
-if ! echo "$OUTPUT" | grep -q "Setting up MCP servers"; then
-    test_pass ".isac.secrets.yaml がない場合にMCP更新がスキップされる"
+OUTPUT=$("$ISAC_CMD" init "no-mcp-test-project" --yes --force 2>&1)
+if echo "$OUTPUT" | grep -q "Setting up MCP servers"; then
+    test_pass "secrets なしでもMCPセットアップは実行される（force=false）"
 else
-    test_fail "switch MCP更新スキップ" "Setting up MCP servers が出力された"
+    test_fail "init MCP セットアップ" "Setting up MCP servers が見つからない"
 fi
 
 rm -rf "$TEST_DIR"

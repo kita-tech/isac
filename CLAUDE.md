@@ -58,7 +58,7 @@ claude mcp remove <name>     # MCP サーバーを削除
 
 #### プロジェクトごとの API キー管理（`.isac.secrets.yaml`）
 
-プロジェクトルートに `.isac.secrets.yaml` を配置すると、`isac init` / `isac switch` 時にMCPサーバーのAPIキーが自動で切り替わる。
+プロジェクトルートに `.isac.secrets.yaml` を配置すると、`isac init` 時にMCPサーバーのAPIキーが自動で切り替わる。
 
 ```bash
 cp .isac.secrets.yaml.example .isac.secrets.yaml
@@ -144,7 +144,6 @@ isac init               # プロジェクト初期化
 isac status             # 状態表示（バージョン情報含む）
 isac status --no-cache  # キャッシュを使わず最新情報を取得
 isac projects           # プロジェクト一覧
-isac switch <id>        # プロジェクト切り替え
 ```
 
 ### バージョン確認

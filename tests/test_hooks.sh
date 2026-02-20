@@ -1176,7 +1176,7 @@ echo "----------------------------------------"
 # テスト1: isac help
 HELP_OUTPUT=$("$BIN_DIR/isac" help 2>/dev/null)
 assert_contains "$HELP_OUTPUT" "install" "isac helpにinstallコマンドが含まれる"
-assert_contains "$HELP_OUTPUT" "switch" "isac helpにswitchコマンドが含まれる"
+assert_contains "$HELP_OUTPUT" "init" "isac helpにinitコマンドが含まれる"
 
 # テスト2: isac version
 VERSION_OUTPUT=$("$BIN_DIR/isac" version 2>/dev/null)

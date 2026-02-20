@@ -31,7 +31,6 @@ show_help() {
     echo "  init          現在のディレクトリでプロジェクト初期化"
     echo "  status        現在のプロジェクト状態とバージョン情報を表示"
     echo "  projects      登録済みプロジェクト一覧"
-    echo "  switch <id>   プロジェクトを切り替え"
     echo "  help          このヘルプを表示"
     echo "  version       バージョン表示"
     echo ""
@@ -41,9 +40,6 @@ show_help() {
     echo ""
     echo -e "${YELLOW}Status Options:${NC}"
     echo "  --no-cache    キャッシュを使わずリモートを確認"
-    echo ""
-    echo -e "${YELLOW}Switch Options:${NC}"
-    echo "  -y, --yes     確認プロンプトをスキップ（新規プロジェクト自動作成）"
     echo ""
     echo -e "${YELLOW}Environment Variables:${NC}"
     echo "  ISAC_NO_CACHE=1   キャッシュを常に無効化（開発時に便利）"
@@ -56,8 +52,6 @@ show_help() {
     echo "  isac init --force         # 既存設定を上書きして再初期化"
     echo "  isac status               # 状態確認（キャッシュ使用）"
     echo "  isac status --no-cache    # 最新情報を取得"
-    echo "  isac switch my-project    # プロジェクト切り替え"
-    echo "  isac switch new-proj -y   # 新規プロジェクト自動作成"
     echo ""
 }
 
@@ -459,7 +453,12 @@ SECRETS_EOF
 
     if [ "${create_claude_dir}" = true ]; then
         setup_claude_directory "${flag_force}"
-        setup_mcp_servers "${flag_force}"
+        # .isac.secrets.yaml が存在する場合は force=true で MCP サーバーを再登録
+        if [ -f ".isac.secrets.yaml" ]; then
+            setup_mcp_servers true
+        else
+            setup_mcp_servers "${flag_force}"
+        fi
     fi
 
     echo ""
@@ -473,14 +472,30 @@ SECRETS_EOF
     if curl -s --connect-timeout 2 "${memory_url}/health" > /dev/null 2>&1; then
         echo -e "Memory Service: ${GREEN}Connected${NC} (${memory_url})"
 
-        # プロジェクト情報取得
-        local project_info
-        project_info=$(curl -s "${memory_url}/projects" 2>/dev/null | grep -o "\"project_id\":\"${project_id}\"" || true)
+        # 類似プロジェクト名の提案（/projects/suggest API を活用）
+        local suggestion encoded_id
+        encoded_id=$(printf '%s' "${project_id}" | jq -sRr @uri 2>/dev/null || printf '%s' "${project_id}" | sed 's/ /%20/g; s/&/%26/g; s/?/%3F/g; s/#/%23/g')
+        suggestion=$(curl -s "${memory_url}/projects/suggest?name=${encoded_id}" 2>/dev/null)
 
-        if [ -n "${project_info}" ]; then
+        local exact_match
+        exact_match=$(echo "${suggestion}" | grep -o '"exact_match":true' || true)
+
+        if [ -n "${exact_match}" ]; then
             echo -e "Status: ${CYAN}Existing project found${NC}"
         else
             echo -e "Status: ${YELLOW}New project${NC}"
+
+            # 類似プロジェクト名を提案
+            local suggestions
+            suggestions=$(echo "${suggestion}" | grep -o '"project_id":"[^"]*"' | sed 's/"project_id":"//;s/"//' || true)
+
+            if [ -n "${suggestions}" ]; then
+                echo ""
+                echo -e "${YELLOW}Similar projects found:${NC}"
+                echo "${suggestions}" | while read -r s; do
+                    echo "  - ${s}"
+                done
+            fi
         fi
     else
         echo -e "Memory Service: ${YELLOW}Not connected${NC}"
@@ -837,7 +852,8 @@ cmd_status() {
     echo ""
 
     # バージョン情報（Git管理下の場合のみ）
-    if [ -d "${ISAC_SOURCE_DIR}/.git" ]; then
+    # -e: ファイルでもディレクトリでも存在すれば真（git worktree では .git はファイル）
+    if [ -e "${ISAC_SOURCE_DIR}/.git" ]; then
         local local_head local_date remote_head commits_behind
         local_head=$(git -C "${ISAC_SOURCE_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
         local_date=$(git -C "${ISAC_SOURCE_DIR}" log -1 --format=%cd --date=short 2>/dev/null || echo "unknown")
@@ -918,6 +934,31 @@ cmd_status() {
             echo -e "${YELLOW}Statistics:${NC}"
             echo "  Memories: ${memory_count:-0}"
             echo "  Decisions: ${decision_count:-0}"
+
+            # 直近の決定事項を表示
+            local encoded_project_id
+            encoded_project_id=$(printf '%s' "${project_id}" | jq -sRr @uri 2>/dev/null || printf '%s' "${project_id}" | sed 's/ /%20/g; s/&/%26/g; s/?/%3F/g; s/#/%23/g')
+            local decisions
+            decisions=$(curl -s "${memory_url}/search?scope=project&scope_id=${encoded_project_id}&type=decision&limit=3&query=decision" 2>/dev/null)
+
+            echo ""
+            echo -e "${YELLOW}Recent Decisions:${NC}"
+            echo "${decisions}" | python3 -c "
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+    memories = data.get('memories', [])
+    if not memories:
+        print('  (no decisions yet)')
+    else:
+        for m in memories:
+            summary = m.get('summary', m.get('content', '')[:50])
+            print(f'  - {summary}')
+except:
+    print('  (could not fetch)')
+" 2>/dev/null || echo "  (could not fetch)"
         fi
     else
         echo -e "Memory Service: ${RED}Not connected${NC}"
@@ -983,121 +1024,6 @@ for p in data:
 " 2>/dev/null || echo "${projects}"
 }
 
-# プロジェクト切り替え
-cmd_switch() {
-    local project_id=""
-    local flag_yes=false
-
-    # オプション解析
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --yes|-y)
-                flag_yes=true
-                shift
-                ;;
-            -*)
-                echo -e "${RED}Unknown option: $1${NC}"
-                exit 1
-                ;;
-            *)
-                project_id="$1"
-                shift
-                ;;
-        esac
-    done
-
-    if [ -z "${project_id}" ]; then
-        echo -e "${RED}Error: Project ID required${NC}"
-        echo "Usage: isac switch <project-id> [--yes]"
-        exit 1
-    fi
-
-    # プロジェクトIDのバリデーション
-    if ! validate_project_id "${project_id}"; then
-        exit 1
-    fi
-
-    echo -e "${BLUE}=== Switch Project ===${NC}"
-    echo ""
-
-    # Memory Service で確認
-    local memory_url
-    memory_url=$(get_memory_url)
-
-    if curl -s --connect-timeout 2 "${memory_url}/health" > /dev/null 2>&1; then
-        local suggestion encoded_id
-        # URLエンコード（特殊文字対策）
-        encoded_id=$(printf '%s' "${project_id}" | sed 's/ /%20/g; s/&/%26/g; s/?/%3F/g; s/#/%23/g')
-        suggestion=$(curl -s "${memory_url}/projects/suggest?name=${encoded_id}" 2>/dev/null)
-
-        local exact_match
-        exact_match=$(echo "${suggestion}" | grep -o '"exact_match":true' || true)
-
-        if [ -z "${exact_match}" ]; then
-            echo -e "${YELLOW}Warning: Project '${project_id}' not found in Memory Service${NC}"
-
-            local suggestions
-            suggestions=$(echo "${suggestion}" | grep -o '"project_id":"[^"]*"' | sed 's/"project_id":"//;s/"//' || true)
-
-            if [ -n "${suggestions}" ]; then
-                echo "Did you mean:"
-                echo "${suggestions}" | while read -r s; do
-                    echo "  - ${s}"
-                done
-                echo ""
-            fi
-
-            if [ "${flag_yes}" = false ]; then
-                echo -n "Create new project? (y/N): "
-                read -r create
-                if [ "${create}" != "y" ] && [ "${create}" != "Y" ]; then
-                    echo "Cancelled."
-                    exit 0
-                fi
-            fi
-        fi
-    fi
-
-    # .isac.yaml 作成/更新
-    cat > ".isac.yaml" << EOF
-# ISAC Project Configuration
-project_id: ${project_id}
-EOF
-
-    echo -e "${GREEN}Switched to: ${CYAN}${project_id}${NC}"
-
-    # .isac.secrets.yaml があれば MCP サーバーを再登録
-    if [ -f ".isac.secrets.yaml" ]; then
-        setup_mcp_servers true
-    fi
-
-    # 直近の決定事項を表示
-    if curl -s --connect-timeout 2 "${memory_url}/health" > /dev/null 2>&1; then
-        echo ""
-        echo -e "${YELLOW}Recent decisions:${NC}"
-
-        local decisions
-        decisions=$(curl -s "${memory_url}/search?scope=project&scope_id=${project_id}&type=decision&limit=3" 2>/dev/null)
-
-        echo "${decisions}" | python3 -c "
-import json
-import sys
-
-try:
-    data = json.load(sys.stdin)
-    memories = data.get('memories', [])
-    if not memories:
-        print('  (no decisions yet)')
-    else:
-        for m in memories:
-            summary = m.get('summary', m.get('content', '')[:50])
-            print(f\"  - {summary}\")
-except:
-    print('  (could not fetch)')
-" 2>/dev/null || echo "  (could not fetch)"
-    fi
-}
-
 # Memory Service URL取得
 get_memory_url() {
     local url="${MEMORY_SERVICE_URL:-}"
@@ -1127,10 +1053,6 @@ case "${1:-}" in
         ;;
     projects)
         cmd_projects
-        ;;
-    switch)
-        shift
-        cmd_switch "$@"
         ;;
     version|--version|-v)
         show_version
