@@ -675,13 +675,13 @@ curl "http://localhost:8100/search?query=認証&scope_id=webapp&type=decision"
 ```bash
 # プロジェクトA で作業
 cd ~/projects/project-a
-isac switch project-a
+isac init project-a --yes
 claude
 # → AIはproject-aの文脈を理解
 
 # プロジェクトB に切り替え
 cd ~/projects/project-b
-isac switch project-b
+isac init project-b --yes
 claude
 # → AIはproject-bの文脈を理解（project-aとは完全に別）
 ```
