@@ -1746,18 +1746,23 @@ async def suggest_project(
 @app.get("/stats/{project_id}")
 async def get_stats(
     project_id: str,
+    include_deprecated: bool = Query(False, description="廃止済み記憶を含めるか"),
     current_user: Optional[CurrentUser] = Depends(get_current_user)
 ):
     """プロジェクトの統計情報"""
+    # deprecated フィルタ条件
+    deprecated_filter = "" if include_deprecated else "AND (deprecated IS NULL OR deprecated = FALSE)"
+
     with get_db() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(f"""
             SELECT
                 scope,
                 type,
                 COUNT(*) as count,
                 AVG(importance) as avg_importance
             FROM memories
-            WHERE scope_id = ? OR scope = 'global'
+            WHERE (scope_id = ? OR scope = 'global')
+            {deprecated_filter}
             GROUP BY scope, type
         """, (project_id,))
 
