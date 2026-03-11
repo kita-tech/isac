@@ -406,7 +406,9 @@ EOF
 )"
 ```
 
-**レビューコメントフォーマット:**
+**レビューコメントフォーマット（日本語/英語セクション分離）:**
+
+**ルール**: 1つのPRコメント内で、日本語のレビュー全体を先に出力し、`---` の区切り線の後に英語の同一内容を出力する。各セクション内では単一言語のみ使用する（行単位の併記は行わない）。
 
 ````markdown
 ## ISAC Autopilot レビュー: XX/100
@@ -474,6 +476,76 @@ EOF
 | 2 | XX/100 | {指摘} | {修正} |
 
 {ループが発生しなかった場合: 「初回レビューで合格」}
+
+---
+
+## 🌐 English Version
+
+## ISAC Autopilot Review: XX/100
+
+### Score by Category
+
+| Persona | Score (/25) | Reasoning |
+|---------|-------------|---------|
+| Security Expert | XX/25 | {reason} |
+| Performance Expert | XX/25 | {reason} |
+| Quality & Maintainability Expert | XX/25 | {reason} |
+| Skeptical Reviewer | XX/25 | {reason} |
+
+**Total: XX/100**
+
+### PR Info
+
+- Changed files: X
+- Additions: +XXX
+- Deletions: -XXX
+
+---
+
+### Security Expert
+
+| Severity | File | Issue |
+|--------|----------|---------|
+| 🔴/🟡/🟢 | `path/to/file` | description |
+
+### Performance Expert
+
+| Severity | File | Issue |
+|--------|----------|---------|
+| 🔴/🟡/🟢 | `path/to/file` | description |
+
+### Quality & Maintainability Expert
+
+| Severity | File | Issue |
+|--------|----------|---------|
+| 🔴/🟡/🟢 | `path/to/file` | description |
+
+### Skeptical Reviewer
+
+| Severity | File | Issue |
+|--------|----------|---------|
+| 🔴/🟡/🟢 | `path/to/file` | description |
+
+---
+
+### Improvement Suggestions
+
+1. **{issue title}** ({persona})
+   - Current: ...
+   - Suggestion: ...
+
+---
+
+### Iteration History
+
+{Only if iterations occurred}
+
+| Iteration | Score | Key Issues | Fixes |
+|-----------|--------|---------|---------|
+| 1 | XX/100 | {issues} | {fixes} |
+| 2 | XX/100 | {issues} | {fixes} |
+
+{If no iterations: "Passed on first review"}
 
 ---
 

@@ -186,7 +186,8 @@ gh api repos/{owner}/{repo}/issues/<PR番号>/comments
 **全て改善した場合の予想スコア: XX/100**
 
 ---
----
+
+## 🌐 English Version
 
 ## 📊 ISAC PR Review: XX/100
 
@@ -282,7 +283,7 @@ EOF
 | 🟡 中 | パフォーマンス問題、テスト不足 | 修正推奨 | -5〜10 |
 | 🟢 低 | 改善提案、ベストプラクティス | 検討 | -1〜3 |
 
-### Severity Definitions (English)
+### 🌐 Severity Definitions
 
 | Severity | Description | Action | Deduction |
 |--------|------|------|----------|
