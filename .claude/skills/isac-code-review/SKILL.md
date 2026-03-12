@@ -1,6 +1,6 @@
 ---
 name: isac-code-review
-description: コードを4人のペルソナで多角的にレビューし、スコアリングと改善点を明示します。
+description: コードを4人のペルソナで多角的にレビューし、スコアリングと改善点を明示します（日本語/英語セクション分離）。
 ---
 
 # ISAC Code Review Skill
@@ -110,11 +110,21 @@ review:
 
 | 重要度 | 説明 | 対応 | 減点目安 |
 |--------|------|------|----------|
-| 🔴 高 (Critical) | セキュリティ脆弱性、本番障害の可能性 | 即時修正必須 | -15〜20点 |
-| 🟡 中 (Warning) | パフォーマンス問題、保守性の懸念 | 修正推奨 | -5〜10点 |
-| 🟢 低 (Info) | 改善提案、ベストプラクティス | 検討 | -1〜3点 |
+| 🔴 高 | セキュリティ脆弱性、本番障害の可能性 | 即時修正必須 | -15〜20点 |
+| 🟡 中 | パフォーマンス問題、保守性の懸念 | 修正推奨 | -5〜10点 |
+| 🟢 低 | 改善提案、ベストプラクティス | 検討 | -1〜3点 |
 
-## 出力フォーマット
+### 🌐 Severity Definitions
+
+| Severity | Description | Action | Deduction |
+|--------|------|------|----------|
+| 🔴 Critical | Security vulnerability, potential production failure | Must fix immediately | -15〜20 |
+| 🟡 Warning | Performance issue, maintainability concern | Recommended | -5〜10 |
+| 🟢 Info | Suggestion, best practice | Consider | -1〜3 |
+
+## 出力フォーマット（日本語/英語セクション分離）
+
+**ルール**: ターミナル出力で、日本語のレビュー全体を先に出力し、`---` の区切り線の後に英語の同一内容を出力する。各セクション内では単一言語のみ使用する（行単位の併記は行わない）。
 
 ### ブランチ全体レビュー時
 
@@ -141,13 +151,13 @@ review:
 
 ### 📄 src/auth/login.py (+45, -12)
 
-**🔒 渡辺（セキュリティ専門家・7年目）**
+**🔒 セキュリティ専門家**
 
 | 重要度 | 行 | 指摘内容 | 減点 |
 |--------|-----|---------|------|
 | 🔴 高 | L23 | SQLインジェクションの可能性 | -15 |
 
-**⚡ 山田（パフォーマンス専門家・8年目）**
+**⚡ パフォーマンス専門家**
 
 | 重要度 | 行 | 指摘内容 | 減点 |
 |--------|-----|---------|------|
@@ -157,13 +167,13 @@ review:
 
 ### 📄 src/models/user.py (+20, -5)
 
-**📐 佐々木（品質・保守性専門家・10年目）**
+**📐 品質・保守性専門家**
 
 | 重要度 | 行 | 指摘内容 | 減点 |
 |--------|-----|---------|------|
 | 🟢 低 | L12 | マジックナンバーの使用 | -2 |
 
-**🤔 中村（懐疑的レビュアー・12年目）**
+**🤔 懐疑的レビュアー**
 
 | 重要度 | 行 | 指摘内容 | 減点 |
 |--------|-----|---------|------|
@@ -209,6 +219,101 @@ review:
 ---
 
 指摘事項を修正しますか？ (Yes/No)
+
+---
+
+## 🌐 English Version
+
+## 📊 Review Score: XX/100
+
+### Review Target
+- Branch: `feature/auth-improvement`
+- Base: `main`
+- Changed files: X
+- Additions: +XXX / Deletions: -XXX
+
+### Score by Category
+| Category | Score | Weight | Contribution |
+|------|--------|------|------|
+| Security | XX | 35% | XX |
+| Maintainability | XX | 30% | XX |
+| Performance | XX | 20% | XX |
+| Test Coverage | XX | 15% | XX |
+
+---
+
+## 🔍 File-by-File Review
+
+### 📄 src/auth/login.py (+45, -12)
+
+**🔒 Security Expert**
+
+| Severity | Line | Issue | Deduction |
+|--------|-----|---------|------|
+| 🔴 Critical | L23 | Potential SQL injection | -15 |
+
+**⚡ Performance Expert**
+
+| Severity | Line | Issue | Deduction |
+|--------|-----|---------|------|
+| 🟡 Warning | L30 | N+1 query problem | -7 |
+
+---
+
+### 📄 src/models/user.py (+20, -5)
+
+**📐 Quality & Maintainability Expert**
+
+| Severity | Line | Issue | Deduction |
+|--------|-----|---------|------|
+| 🟢 Info | L12 | Magic number usage | -2 |
+
+**🤔 Skeptical Reviewer**
+
+| Severity | Line | Issue | Deduction |
+|--------|-----|---------|------|
+| 🟡 Warning | - | Potentially over-abstracted for the requirements | - |
+
+---
+
+## 🔧 Improvements (+XX potential)
+
+Listed by improvement impact:
+
+### 1. src/auth/login.py:L23 - SQL injection fix (+15)
+- **Current**: String concatenation for SQL construction
+- **Suggestion**:
+  ```python
+  # Before
+  query = f"SELECT * FROM users WHERE id = {user_id}"
+
+  # After
+  cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+  ```
+
+### 2. src/auth/login.py:L30 - N+1 query fix (+7)
+- **Current**: DB access in loop
+- **Suggestion**: Use `prefetch_related()` for batch fetching
+
+### 3. src/models/user.py:L12 - Use constant (+2)
+- **Current**: `if retry > 3:`
+- **Suggestion**: Define `MAX_RETRY = 3` as a constant
+
+---
+
+## 📈 Summary
+
+| Severity | Count | Total Deduction |
+|--------|------|----------|
+| 🔴 Critical | X | -XX |
+| 🟡 Warning | Y | -XX |
+| 🟢 Info | Z | -XX |
+
+**Potential score with all improvements: XX/100**
+
+---
+
+Fix the issues? (Yes/No)
 ```
 
 ## チェック項目詳細

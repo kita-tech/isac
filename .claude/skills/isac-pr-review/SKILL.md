@@ -1,6 +1,6 @@
 ---
 name: isac-pr-review
-description: GitHub PRを4人のペルソナで多角的にレビューし、スコアリング結果をPRコメントに投稿します（英日併記）。
+description: GitHub PRを4人のペルソナで多角的にレビューし、スコアリング結果をPRコメントに投稿します（日本語/英語セクション分離）。
 ---
 
 # ISAC PR Review Skill
@@ -108,82 +108,158 @@ gh api repos/{owner}/{repo}/issues/<PR番号>/comments
 >
 > **必須ルール**: 懐疑的レビュアーは常に含めること（ペルソナ数に関わらず最低1人）。
 
-### 5. 出力フォーマット（PRコメント用・英日併記）
+### 5. 出力フォーマット（PRコメント用・日本語/英語セクション分離）
 
-**ルール**: ヘッダー、テーブル見出し、指摘内容はすべて `English / 日本語` の併記とする。
+**ルール**: 1つのPRコメント内で、日本語のレビュー全体を先に出力し、`---` の区切り線の後に英語の同一内容を出力する。各セクション内では単一言語のみ使用する（行単位の併記は行わない）。
 
 ```markdown
 ## 📊 ISAC PR Review: XX/100
 
-### Score by Category / 観点別スコア
-| Category / 観点 | Score | Weight | Contribution |
+### 観点別スコア
+| 観点 | スコア | 重み | 寄与 |
 |------|--------|------|------|
-| Code Quality / コード品質 | XX | 30% | XX |
-| Security / セキュリティ | XX | 25% | XX |
-| Test Coverage / テスト充足度 | XX | 20% | XX |
-| PR Quality / PR品質 | XX | 15% | XX |
-| Consistency / 整合性 | XX | 10% | XX |
+| コード品質 | XX | 30% | XX |
+| セキュリティ | XX | 25% | XX |
+| テスト充足度 | XX | 20% | XX |
+| PR品質 | XX | 15% | XX |
+| 整合性 | XX | 10% | XX |
 
-### PR Info / PR情報
-- Changed files / 変更ファイル数: X
-- Additions / 追加行数: +XXX
-- Deletions / 削除行数: -XXX
-- Commits / コミット数: X
-
----
-
-## 🔍 Detailed Review / 詳細レビュー
-
-### 🔒 Security / セキュリティ
-| Severity / 重要度 | File | Issue / 指摘内容 |
-|--------|----------|---------|
-| 🔴 Critical / 高 | `path/to/file` | English description / 日本語の説明 |
-
-### ⚡ Performance / パフォーマンス
-| Severity / 重要度 | File | Issue / 指摘内容 |
-|--------|----------|---------|
-| 🟡 Warning / 中 | `path/to/file` | English description / 日本語の説明 |
-
-### 📐 Quality & Maintainability / 品質・保守性
-| Severity / 重要度 | File | Issue / 指摘内容 |
-|--------|----------|---------|
-| 🟢 Info / 低 | `path/to/file` | English description / 日本語の説明 |
-
-### 🤔 Skeptical Reviewer / 懐疑的レビュアー
-| Severity / 重要度 | File | Issue / 指摘内容 |
-|--------|----------|---------|
-| 🟡 Warning / 中 | `path/to/file` | English description / 日本語の説明 |
+### PR情報
+- 変更ファイル数: X
+- 追加行数: +XXX
+- 削除行数: -XXX
+- コミット数: X
 
 ---
 
-## 🔧 Improvements / 改善点（+XX）
+## 🔍 詳細レビュー
 
-1. **filename: Issue title / 指摘タイトル** (+X)
-   - Current / 現状: ...
-   - Suggestion / 改善案: ...
+### 🔒 セキュリティ
+| 重要度 | ファイル | 指摘内容 |
+|--------|----------|---------|
+| 🔴 高 | `path/to/file` | 日本語の説明 |
 
----
+### ⚡ パフォーマンス
+| 重要度 | ファイル | 指摘内容 |
+|--------|----------|---------|
+| 🟡 中 | `path/to/file` | 日本語の説明 |
 
-## 📋 PR Quality Check / PR品質チェック
+### 📐 品質・保守性
+| 重要度 | ファイル | 指摘内容 |
+|--------|----------|---------|
+| 🟢 低 | `path/to/file` | 日本語の説明 |
 
-### Basics / 基本
-- ✅ PR size / PRサイズ: Appropriate / 適切（XXX lines）
-- ✅ Commit granularity / コミット粒度: Appropriate / 適切
-- ⚠️ Tests / テスト: No tests for new features / 機能追加に対するテストがありません
-
-### PR Description / PR説明文
-- ✅ Description / 説明文: Present / あり
-- ✅ Why / 変更理由: Clear / 明確
-- ⚠️ Impact scope / 影響範囲: Not documented / 記載なし
-- ✅ Description-Implementation consistency / 説明と実装の整合性: Matched / 一致
-
-### PR Comments / PRコメント確認
-- ✅ Existing feedback / 既存指摘: All addressed / 全て対応済み
-- ✅ Unresolved discussions / 未解決の議論: None / なし
+### 🤔 懐疑的レビュアー
+| 重要度 | ファイル | 指摘内容 |
+|--------|----------|---------|
+| 🟡 中 | `path/to/file` | 日本語の説明 |
 
 ---
 
-**Potential score with all improvements / 全て改善した場合の予想スコア: XX/100**
+## 🔧 改善点（+XX）
+
+1. **filename: 指摘タイトル** (+X)
+   - 現状: ...
+   - 改善案: ...
+
+---
+
+## 📋 PR品質チェック
+
+### 基本
+- ✅ PRサイズ: 適切（XXX行）
+- ✅ コミット粒度: 適切
+- ⚠️ テスト: 機能追加に対するテストがありません
+
+### PR説明文
+- ✅ 説明文: あり
+- ✅ 変更理由: 明確
+- ⚠️ 影響範囲: 記載なし
+- ✅ 説明と実装の整合性: 一致
+
+### PRコメント確認
+- ✅ 既存指摘: 全て対応済み
+- ✅ 未解決の議論: なし
+
+---
+
+**全て改善した場合の予想スコア: XX/100**
+
+---
+
+## 🌐 English Version
+
+## 📊 ISAC PR Review: XX/100
+
+### Score by Category
+| Category | Score | Weight | Contribution |
+|------|--------|------|------|
+| Code Quality | XX | 30% | XX |
+| Security | XX | 25% | XX |
+| Test Coverage | XX | 20% | XX |
+| PR Quality | XX | 15% | XX |
+| Consistency | XX | 10% | XX |
+
+### PR Info
+- Changed files: X
+- Additions: +XXX
+- Deletions: -XXX
+- Commits: X
+
+---
+
+## 🔍 Detailed Review
+
+### 🔒 Security
+| Severity | File | Issue |
+|--------|----------|---------|
+| 🔴 Critical | `path/to/file` | English description |
+
+### ⚡ Performance
+| Severity | File | Issue |
+|--------|----------|---------|
+| 🟡 Warning | `path/to/file` | English description |
+
+### 📐 Quality & Maintainability
+| Severity | File | Issue |
+|--------|----------|---------|
+| 🟢 Info | `path/to/file` | English description |
+
+### 🤔 Skeptical Reviewer
+| Severity | File | Issue |
+|--------|----------|---------|
+| 🟡 Warning | `path/to/file` | English description |
+
+---
+
+## 🔧 Improvements (+XX)
+
+1. **filename: Issue title** (+X)
+   - Current: ...
+   - Suggestion: ...
+
+---
+
+## 📋 PR Quality Check
+
+### Basics
+- ✅ PR size: Appropriate (XXX lines)
+- ✅ Commit granularity: Appropriate
+- ⚠️ Tests: No tests for new features
+
+### PR Description
+- ✅ Description: Present
+- ✅ Why: Clear
+- ⚠️ Impact scope: Not documented
+- ✅ Description-Implementation consistency: Matched
+
+### PR Comments
+- ✅ Existing feedback: All addressed
+- ✅ Unresolved discussions: None
+
+---
+
+**Potential score with all improvements: XX/100**
 
 > 🤖 Generated by ISAC `/isac-pr-review`
 ```
@@ -199,13 +275,21 @@ EOF
 )"
 ```
 
-## 重要度の定義 / Severity Definitions
+## 重要度の定義
 
-| Severity / 重要度 | Description / 説明 | Action / 対応 | Deduction / 減点目安 |
+| 重要度 | 説明 | 対応 | 減点目安 |
 |--------|------|------|----------|
-| 🔴 Critical / 高 | Security vulnerability, credential leak / セキュリティ脆弱性、機密情報漏洩 | Must fix before merge / マージ前に必須修正 | -15〜20 |
-| 🟡 Warning / 中 | Performance issue, insufficient tests / パフォーマンス問題、テスト不足 | Recommended / 修正推奨 | -5〜10 |
-| 🟢 Info / 低 | Suggestion, best practice / 改善提案、ベストプラクティス | Consider / 検討 | -1〜3 |
+| 🔴 高 | セキュリティ脆弱性、機密情報漏洩 | マージ前に必須修正 | -15〜20 |
+| 🟡 中 | パフォーマンス問題、テスト不足 | 修正推奨 | -5〜10 |
+| 🟢 低 | 改善提案、ベストプラクティス | 検討 | -1〜3 |
+
+### 🌐 Severity Definitions
+
+| Severity | Description | Action | Deduction |
+|--------|------|------|----------|
+| 🔴 Critical | Security vulnerability, credential leak | Must fix before merge | -15〜20 |
+| 🟡 Warning | Performance issue, insufficient tests | Recommended | -5〜10 |
+| 🟢 Info | Suggestion, best practice | Consider | -1〜3 |
 
 ## PRサイズの評価基準
 
