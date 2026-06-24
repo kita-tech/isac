@@ -61,14 +61,14 @@ RESULT=$(curl -s --get "$MEMORY_URL/search" \
   --data-urlencode "query=認証" \
   --data-urlencode "scope=project" \
   --data-urlencode "scope_id=$PROJECT_ID")
-COUNT=$(echo "$RESULT" | jq -r '.memories | length')
+COUNT=$(printf '%s\n' "$RESULT" | jq -r '.memories | length')
 
 if [ "$COUNT" = "0" ] || [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
     echo "該当する記憶は見つかりませんでした。"
 else
     echo "## 🔍 検索結果（${COUNT}件）"
     echo ""
-    echo "$RESULT" | jq -r '.memories | to_entries | .[] | "\(.key + 1). [\(.value.type)] \(.value.content | split("\n")[0] | .[0:70]) (ID: \(.value.id))"'
+    printf '%s\n' "$RESULT" | jq -r '.memories | to_entries | .[] | "\(.key + 1). [\(.value.type)] \(.value.content | split("\n")[0] | .[0:70]) (ID: \(.value.id))"'
 fi
 ```
 
@@ -96,8 +96,8 @@ RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
     }')")
 
 # 保存結果の確認
-if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
-    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+if printf '%s\n' "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(printf '%s\n' "$RESPONSE" | jq -r '.id')
     echo "✅ 記憶を保存しました (ID: $MEMORY_ID)"
 else
     echo "❌ 記憶の保存に失敗しました"
@@ -127,17 +127,17 @@ MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 RESULT=$(curl -s --get "$MEMORY_URL/context/$PROJECT_ID" \
   --data-urlencode "query=認証の実装")
 
-if echo "$RESULT" | jq -e '.global_knowledge' > /dev/null 2>&1; then
+if printf '%s\n' "$RESULT" | jq -e '.global_knowledge' > /dev/null 2>&1; then
     echo "## 📚 コンテキスト"
     echo ""
     echo "### グローバルナレッジ"
-    echo "$RESULT" | jq -r '.global_knowledge // [] | .[] | "- [\(.type)] \(.content | split("\n")[0] | .[0:70])"'
+    printf '%s\n' "$RESULT" | jq -r '.global_knowledge // [] | .[] | "- [\(.type)] \(.content | split("\n")[0] | .[0:70])"'
     echo ""
     echo "### プロジェクト決定事項"
-    echo "$RESULT" | jq -r '.project_decisions // [] | .[] | "- [\(.type)] \(.content | split("\n")[0] | .[0:70])"'
+    printf '%s\n' "$RESULT" | jq -r '.project_decisions // [] | .[] | "- [\(.type)] \(.content | split("\n")[0] | .[0:70])"'
     echo ""
     echo "### 最近の作業"
-    echo "$RESULT" | jq -r '.project_recent // [] | .[] | "- [\(.type)] \(.content | split("\n")[0] | .[0:70])"'
+    printf '%s\n' "$RESULT" | jq -r '.project_recent // [] | .[] | "- [\(.type)] \(.content | split("\n")[0] | .[0:70])"'
 else
     echo "❌ コンテキストの取得に失敗しました"
 fi
@@ -155,14 +155,14 @@ MEMORY_URL="${MEMORY_SERVICE_URL:-http://localhost:8100}"
 
 RESULT=$(curl -s "$MEMORY_URL/stats/$PROJECT_ID")
 
-if echo "$RESULT" | jq -e '.total_memories' > /dev/null 2>&1; then
-    TOTAL=$(echo "$RESULT" | jq -r '.total_memories')
+if printf '%s\n' "$RESULT" | jq -e '.total_memories' > /dev/null 2>&1; then
+    TOTAL=$(printf '%s\n' "$RESULT" | jq -r '.total_memories')
     echo "## 📊 記憶統計（${PROJECT_ID}）"
     echo ""
     echo "合計: ${TOTAL}件"
     echo ""
     echo "### タイプ別"
-    echo "$RESULT" | jq -r '.by_type | to_entries | .[] | "  \(.key): \(.value)件"'
+    printf '%s\n' "$RESULT" | jq -r '.by_type | to_entries | .[] | "  \(.key): \(.value)件"'
 else
     echo "❌ 統計情報の取得に失敗しました"
 fi

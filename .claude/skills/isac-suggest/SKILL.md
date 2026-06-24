@@ -41,13 +41,13 @@ fi
 # 接続成功時のみタスク取得
 if [ "$MEMORY_CONNECTED" = true ]; then
     RESULT=$(curl -s "$MEMORY_URL/my/todos?project_id=$PROJECT_ID&owner=$USER_EMAIL&status=pending")
-    COUNT=$(echo "$RESULT" | jq -r '.count')
+    COUNT=$(printf '%s\n' "$RESULT" | jq -r '.count')
 
     # COUNT が数値かつ1件以上の場合のみ表示
     if [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ]; then
         echo "## 📋 未完了タスク（${COUNT}件）"
         echo ""
-        echo "$RESULT" | jq -r '.todos | to_entries | .[] | "\(.key + 1). [ ] \(.value.content | split("\n")[0] | .[0:60])"'
+        printf '%s\n' "$RESULT" | jq -r '.todos | to_entries | .[] | "\(.key + 1). [ ] \(.value.content | split("\n")[0] | .[0:60])"'
         echo ""
     fi
 fi

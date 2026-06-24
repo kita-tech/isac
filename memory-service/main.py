@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -78,6 +79,20 @@ class MemoryType(str, Enum):
     WORK = "work"          # 作業履歴
     KNOWLEDGE = "knowledge"  # 一般知識
     TODO = "todo"          # 個人タスク（翌日持ち越し用）
+
+
+# type別メタデータスキーマ（明文化＋検証に使用）
+#   required: 保存時に欠落していると警告を返す（todo の owner は認証principalから自動補完を試みる）
+#   defaults: 欠落時に補完するデフォルト値
+#   enum: 値が限定されるキー（不正値は422エラー）
+# 詳細は docs/MEMORY_SERVICE.md「type別メタデータスキーマ」を参照。
+TYPE_METADATA_SCHEMA: dict[str, dict] = {
+    "todo": {
+        "required": ["owner", "status"],
+        "defaults": {"status": "pending"},
+        "enum": {"status": ["pending", "done"]},
+    },
+}
 
 
 class MemoryCategory(str, Enum):
@@ -156,6 +171,7 @@ class StoreResponse(BaseModel):
     message: str
     superseded_ids: list[str] = Field(default_factory=list)  # 廃止された記憶のIDリスト
     skipped_supersedes: list[dict] = Field(default_factory=list)  # スキップされた廃止対象（理由付き）
+    warnings: list[str] = Field(default_factory=list)  # 非致命的な警告（owner未指定など）
 
 
 class TeamCreate(BaseModel):
@@ -233,6 +249,86 @@ def validate_expires_at(expires_at: str) -> None:
             status_code=422,
             detail="expires_at は ISO 8601 形式で指定してください（例: 2025-12-31T23:59:59）"
         )
+
+
+# 制御文字（タブ \x09・改行 \x0a・復帰 \x0d を除く U+0000–U+001F と DEL U+007F）
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def sanitize_control_chars(text):
+    """文字列からタブ・改行・復帰以外の制御文字を除去する（JSON堅牢化）。
+
+    ANSI エスケープシーケンス（ESC=U+001B）や生のページトークン制御文字が
+    保存されるのを防ぐ。タブ・改行・復帰は通常のテキストとして保持する。
+    """
+    if not isinstance(text, str):
+        return text
+    return _CONTROL_CHARS_RE.sub("", text)
+
+
+def sanitize_metadata(metadata: dict) -> dict:
+    """metadata 内の文字列値から制御文字を再帰的に除去する。"""
+    def _clean(value):
+        if isinstance(value, str):
+            return sanitize_control_chars(value)
+        if isinstance(value, list):
+            return [_clean(v) for v in value]
+        if isinstance(value, dict):
+            return {k: _clean(v) for k, v in value.items()}
+        return value
+
+    return {k: _clean(v) for k, v in metadata.items()}
+
+
+def enforce_type_metadata(entry: "MemoryEntry", current_user: "Optional[CurrentUser]") -> list[str]:
+    """type別メタデータの自動補完・検証を行う。
+
+    - todo: owner 未指定なら認証principal（匿名・管理者を除く）から自動補完。
+            補完できない場合は 400 で弾かず警告を返す（後方互換維持）。
+            status 未指定なら 'pending' を補完。
+    - enum 違反（例: status が pending/done 以外）は 422 エラー。
+
+    Returns:
+        非致命的な警告メッセージのリスト。
+    """
+    warnings: list[str] = []
+    schema = TYPE_METADATA_SCHEMA.get(entry.type.value)
+    if not schema:
+        return warnings
+
+    md = entry.metadata
+
+    # todo の owner 自動補完
+    if entry.type == MemoryType.TODO and not md.get("owner"):
+        principal = current_user.user_id if current_user else None
+        if principal and principal not in ("anonymous", "admin"):
+            md["owner"] = principal
+        else:
+            warnings.append(
+                "type=todo に metadata.owner が未指定です。"
+                "owner の無い todo は /my/todos の owner フィルタに現れません。"
+                "isac-todo スキル経由での登録、または metadata.owner の明示指定を推奨します。"
+            )
+
+    # デフォルト値の補完（status など）
+    for key, default_value in schema.get("defaults", {}).items():
+        if not md.get(key):
+            md[key] = default_value
+
+    # required キーの欠落チェック（補完後にまだ無いものを警告）
+    for key in schema.get("required", []):
+        if not md.get(key):
+            warnings.append(f"type={entry.type.value} に metadata.{key} が未指定です。")
+
+    # enum 検証（不正値は明確なエラー）
+    for key, allowed in schema.get("enum", {}).items():
+        if key in md and md[key] not in allowed:
+            raise HTTPException(
+                status_code=422,
+                detail=f"metadata.{key} は {allowed} のいずれかである必要があります（指定値: {md[key]}）"
+            )
+
+    return warnings
 
 
 def generate_id() -> str:
@@ -758,6 +854,15 @@ async def store_memory(
     if entry.expires_at:
         validate_expires_at(entry.expires_at)
 
+    # 制御文字サニタイズ（保存データに生制御文字が残らないようにする＝JSON堅牢化の根本対策）
+    entry.content = sanitize_control_chars(entry.content)
+    if entry.summary:
+        entry.summary = sanitize_control_chars(entry.summary)
+    entry.metadata = sanitize_metadata(entry.metadata)
+
+    # type別メタデータの自動補完・検証（todo の owner 自動補完、status 既定値、enum 検証）
+    metadata_warnings = enforce_type_metadata(entry, current_user)
+
     # レート制限
     client_ip = request.client.host if request.client else "unknown"
     if not check_rate_limit(user_id or client_ip):
@@ -867,7 +972,8 @@ async def store_memory(
         tags=all_tags,
         message=f"Memory stored ({entry.scope.value}/{entry.type.value})",
         superseded_ids=superseded_ids,
-        skipped_supersedes=skipped_ids
+        skipped_supersedes=skipped_ids,
+        warnings=metadata_warnings
     )
 
 

@@ -68,11 +68,11 @@ fi
 
 # sensitive-filter でチェック（プロジェクトルートからの相対パス）
 FILTER_RESULT=$(echo "$TASK_CONTENT" | bash .claude/hooks/sensitive-filter.sh 2>/dev/null)
-IS_SENSITIVE=$(echo "$FILTER_RESULT" | jq -r '.is_sensitive')
+IS_SENSITIVE=$(printf '%s\n' "$FILTER_RESULT" | jq -r '.is_sensitive')
 
 if [ "$IS_SENSITIVE" = "true" ]; then
-    DETECTED=$(echo "$FILTER_RESULT" | jq -r '.detected | join(", ")')
-    FILTERED_TEXT=$(echo "$FILTER_RESULT" | jq -r '.filtered')
+    DETECTED=$(printf '%s\n' "$FILTER_RESULT" | jq -r '.detected | join(", ")')
+    FILTERED_TEXT=$(printf '%s\n' "$FILTER_RESULT" | jq -r '.filtered')
     echo "⚠️ 機密情報が検出されました: $DETECTED"
     echo ""
     echo "選択肢:"
@@ -105,7 +105,7 @@ RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
     }')")
 
 # 保存結果の確認
-if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+if printf '%s\n' "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
     echo "✅ タスクを追加しました"
     echo ""
     echo "「$TASK_CONTENT」"

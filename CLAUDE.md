@@ -189,6 +189,40 @@ export ISAC_NO_CACHE=1
 - 終了コードを適切に返す
 - POSIX互換の正規表現を使用（`[[:space:]]` 等）
 
+### シェルでの JSON 処理（堅牢化ルール）
+
+Memory Service など API の生 JSON レスポンスをシェルで扱う際は、以下を **必須** とする。
+
+**❌ 禁止: `echo "$VAR" | jq`**
+
+`zsh` の `echo`（および `sh` で `xpg_echo` 有効時）は、文字列中のエスケープ列 `\n` を
+**実際の改行バイトに変換**する。JSON 文字列内の `\n`（複数行 content 等）が生改行に化け、
+`jq: parse error: control characters from U+0000 through U+001F must be escaped` で失敗する。
+スキルの bash 例は Claude Code の Bash ツール（zsh系）でも実行されるため、この影響を受ける。
+
+> 注: hooks（`#!/bin/bash`）の `echo` はエスケープを解釈しないため安全。SKILL.md スニペットが対象。
+
+**✅ 推奨: 変数を `printf '%s\n'` で渡す**
+
+```bash
+RESULT=$(curl -s "$MEMORY_URL/my/todos?...")
+COUNT=$(printf '%s\n' "$RESULT" | jq -r '.count')          # OK
+printf '%s\n' "$RESULT" | jq -r '.todos[].id'              # OK
+```
+
+**✅ 代替: 直接パイプ（変数を介さない場合）**
+
+```bash
+curl -s "$MEMORY_URL/..." | jq -r '.count'                 # echo を介さないので安全
+```
+
+**✅ 制御文字が混入しうる入力のフォールバック**: どうしても生制御文字を含む可能性がある
+JSON を読む場合は `python3 -c 'import sys,json; d=json.loads(sys.stdin.read(), strict=False); ...'`
+を使う（`strict=False` で制御文字を許容してパースする）。
+
+> サーバ側でも `POST /store` 時に content/metadata の制御文字を除去している
+> （[docs/MEMORY_SERVICE.md](docs/MEMORY_SERVICE.md)「制御文字のサニタイズ」）。クライアントとサーバの二段構えで堅牢化する。
+
 ## 禁止事項
 
 - Memory Service に LLM を組み込まない（シンプルさ維持）
@@ -264,6 +298,19 @@ curl -X POST http://localhost:8100/store -d '{"content": "...", ...}'
 # 問題があれば廃止
 curl -X PATCH http://localhost:8100/memory/{id}/deprecate -d '{"deprecated": true}'
 ```
+
+#### 共有ストアへの書き込みは専用手段を優先する（運用ルール）
+
+`POST /store` を生API直叩きすると、`metadata.owner` などの必須メタデータを付け忘れやすい
+（todo の owner 漏れは `/my/todos` で自分の一覧に出ない原因になる）。以下を徹底すること。
+
+- **専用スキルを優先する**: todo は `/isac-todo`（`isac-todo add`）、決定は `/isac-decide`、
+  汎用記憶は `/isac-save-memory` を使う。これらは owner / status 等を自動設定する。
+- **生API直叩きは最小限に**。やむを得ず直叩きする場合は、保存先と同じ scope/type の既存
+  レコードを 1〜2 件サンプリング（`GET /search` 等）して metadata の慣例を踏襲する。
+- todo の `owner` はサーバ側でも認証principalから自動補完を試み、補完できない場合は
+  レスポンスの `warnings` で通知する（[docs/MEMORY_SERVICE.md](docs/MEMORY_SERVICE.md)「type別メタデータスキーマ」）。
+  `warnings` が返ったら内容を確認すること。
 
 ### Skill/Hooks の共有（Git PRフロー）
 
