@@ -12,11 +12,21 @@ ISAC Memory Service API テスト
 """
 
 import pytest
+import re
 import requests
 import uuid
 from datetime import datetime
 
 BASE_URL = "http://localhost:8200"
+
+# サーバの sanitize_control_chars と同じ規則（タブ・改行・復帰を除く制御文字を除去）。
+# /store はこれらの制御文字を保存前に除去するため、round-trip 検証では期待値も同様に変換する。
+_TEST_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def expected_stored(text: str) -> str:
+    """サーバ保存後に期待される文字列（制御文字除去後）を返す。"""
+    return _TEST_CONTROL_CHARS_RE.sub("", text)
 
 
 class TestHealthCheck:
@@ -2494,11 +2504,11 @@ class TestSpecialCharactersComprehensive:
         data = response.json()
         assert "id" in data
 
-        # 保存した内容を取得して確認
+        # 保存した内容を取得して確認（制御文字はサニタイズされるため期待値も変換）
         memory_id = data["id"]
         get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
         assert get_response.status_code == 200
-        assert content in get_response.json()["content"]
+        assert expected_stored(content) in get_response.json()["content"]
 
     @pytest.mark.parametrize("char_index", range(14))
     def test_search_special_chars(self, special_chars, char_index):
@@ -2577,10 +2587,11 @@ class TestSpecialCharactersComprehensive:
         export_data = export_response.json()
         assert export_data["count"] >= len(special_chars)
 
-        # 各特殊文字が含まれていることを確認
+        # 各特殊文字が含まれていることを確認（制御文字はサニタイズされるため期待値も変換）
         exported_contents = [m["content"] for m in export_data["memories"]]
         for content in special_chars:
-            found = any(content in ec for ec in exported_contents)
+            expected = expected_stored(content)
+            found = any(expected in ec for ec in exported_contents)
             assert found, f"特殊文字 '{content}' がエクスポートデータに見つかりません"
 
     @pytest.mark.parametrize("char_index", range(14))
@@ -2656,7 +2667,9 @@ class TestSpecialCharactersComprehensive:
         get_response = requests.get(f"{BASE_URL}/memory/{memory_id}")
         assert get_response.status_code == 200
         saved_metadata = get_response.json().get("metadata", {})
-        assert saved_metadata.get("special_key") == meta_value, f"メタデータ値 '{meta_value}' が保存されていません"
+        # 制御文字はサニタイズされるため期待値も変換
+        assert saved_metadata.get("special_key") == expected_stored(meta_value), \
+            f"メタデータ値 '{meta_value}' が保存されていません"
 
     def test_update_content_normal(self):
         """PATCH でコンテンツを正常に更新できる"""
@@ -3082,6 +3095,153 @@ class TestBoundaryValuesComprehensive:
             params={"query": "テスト", "max_tokens": 100000}
         )
         assert response.status_code == 200
+
+
+class TestTodoMetadata:
+    """type=todo のメタデータ自動補完・検証のテスト（owner / status / warnings）"""
+
+    def _store(self, client_or_none, metadata, status_field="pending_unused"):
+        payload = {
+            "content": f"todoテスト {uuid.uuid4()}",
+            "type": "todo",
+            "scope": "project",
+            "scope_id": "todo-meta-test",
+            "metadata": metadata,
+        }
+        if client_or_none is None:
+            return requests.post(f"{BASE_URL}/store", json=payload)
+        return client_or_none.post("/store", json=payload)
+
+    # --- owner 自動補完 ---
+
+    def test_todo_owner_autofill_with_auth(self, user_a_client, test_users, project_with_user_a):
+        """認証済みで owner 未指定なら principal から自動補完され、警告は出ない"""
+        payload = {
+            "content": f"todoテスト {uuid.uuid4()}",
+            "type": "todo",
+            "scope": "project",
+            "scope_id": project_with_user_a,  # user_a がメンバーのプロジェクト
+            "metadata": {},
+        }
+        response = user_a_client.post("/store", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("warnings", []) == []
+        # 保存された owner が principal と一致
+        get_response = user_a_client.get(f"/memory/{data['id']}")
+        assert get_response.status_code == 200
+        assert get_response.json()["metadata"].get("owner") == test_users["user_a"].user_id
+
+    def test_todo_owner_missing_anonymous_warns(self):
+        """匿名（補完元なし）で owner 未指定なら 400 ではなく 200 + warnings"""
+        response = self._store(None, metadata={})
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("warnings"), "owner 未指定時は warnings が返るべき"
+        assert any("owner" in w for w in data["warnings"])
+
+    def test_todo_owner_explicit_preserved(self):
+        """owner を明示指定した場合はそのまま保持され、警告は出ない"""
+        response = self._store(None, metadata={"owner": "explicit@example.com"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("warnings", []) == []
+        get_response = requests.get(f"{BASE_URL}/memory/{data['id']}")
+        assert get_response.json()["metadata"].get("owner") == "explicit@example.com"
+
+    # --- status デフォルト・enum 検証 ---
+
+    def test_todo_status_default_pending(self):
+        """status 未指定なら 'pending' が補完される"""
+        response = self._store(None, metadata={"owner": "u@example.com"})
+        assert response.status_code == 200
+        data = response.json()
+        get_response = requests.get(f"{BASE_URL}/memory/{data['id']}")
+        assert get_response.json()["metadata"].get("status") == "pending"
+
+    def test_todo_status_valid_done_preserved(self):
+        """status=done は有効値なので保持される"""
+        response = self._store(None, metadata={"owner": "u@example.com", "status": "done"})
+        assert response.status_code == 200
+        get_response = requests.get(f"{BASE_URL}/memory/{response.json()['id']}")
+        assert get_response.json()["metadata"].get("status") == "done"
+
+    def test_todo_status_invalid_rejected(self):
+        """status が pending/done 以外なら 422 エラー"""
+        response = self._store(None, metadata={"owner": "u@example.com", "status": "in_progress"})
+        assert response.status_code == 422
+
+    # --- 他の type には影響しないこと ---
+
+    def test_non_todo_type_no_owner_requirement(self):
+        """type=work など todo 以外は owner 未指定でも警告なし"""
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"work {uuid.uuid4()}",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "todo-meta-test",
+        })
+        assert response.status_code == 200
+        assert response.json().get("warnings", []) == []
+
+
+class TestControlCharSanitization:
+    """保存時の制御文字サニタイズのテスト"""
+
+    def test_ansi_escape_stripped_from_content(self):
+        """content 内の ANSI エスケープ（ESC=\\x1b）が除去される"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"colored \x1b[31mred\x1b[0m text {unique_id}"
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": content,
+            "type": "work",
+            "scope": "project",
+            "scope_id": "sanitize-test",
+        })
+        assert response.status_code == 200
+        get_response = requests.get(f"{BASE_URL}/memory/{response.json()['id']}")
+        stored = get_response.json()["content"]
+        assert "\x1b" not in stored
+        assert f"colored [31mred[0m text {unique_id}" == stored
+
+    def test_newline_tab_preserved(self):
+        """改行・タブは除去されず保持される"""
+        unique_id = str(uuid.uuid4())[:8]
+        content = f"line1\nline2\tcol {unique_id}"
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": content,
+            "type": "work",
+            "scope": "project",
+            "scope_id": "sanitize-test",
+        })
+        assert response.status_code == 200
+        get_response = requests.get(f"{BASE_URL}/memory/{response.json()['id']}")
+        assert get_response.json()["content"] == content
+
+    def test_control_chars_stripped_from_metadata(self):
+        """metadata の文字列値からも制御文字が除去される"""
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"meta sanitize {uuid.uuid4()}",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "sanitize-test",
+            "metadata": {"note": "a\x07b\x1bc"},
+        })
+        assert response.status_code == 200
+        get_response = requests.get(f"{BASE_URL}/memory/{response.json()['id']}")
+        assert get_response.json()["metadata"].get("note") == "abc"
+
+    def test_store_response_has_warnings_field(self):
+        """StoreResponse に warnings フィールドが常に存在する（後方互換）"""
+        response = requests.post(f"{BASE_URL}/store", json={
+            "content": f"warnings field {uuid.uuid4()}",
+            "type": "work",
+            "scope": "project",
+            "scope_id": "sanitize-test",
+        })
+        assert response.status_code == 200
+        assert "warnings" in response.json()
+        assert isinstance(response.json()["warnings"], list)
 
 
 if __name__ == "__main__":

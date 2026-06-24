@@ -145,8 +145,8 @@ RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
     }')")
 
 # 保存結果の確認
-if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
-    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+if printf '%s\n' "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(printf '%s\n' "$RESPONSE" | jq -r '.id')
     echo "✅ 設計を記録しました (ID: $MEMORY_ID)"
 else
     echo "❌ 設計の記録に失敗しました"

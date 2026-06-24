@@ -74,8 +74,8 @@ RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
     }')")
 
 # 保存結果の確認
-if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
-    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+if printf '%s\n' "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(printf '%s\n' "$RESPONSE" | jq -r '.id')
     echo "✅ 決定を記録しました (ID: $MEMORY_ID)"
 else
     echo "❌ 決定の記録に失敗しました"
@@ -108,8 +108,8 @@ RESPONSE=$(curl -s -X POST "$MEMORY_URL/store" \
     }')")
 
 # 保存結果の確認
-if echo "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
-    MEMORY_ID=$(echo "$RESPONSE" | jq -r '.id')
+if printf '%s\n' "$RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+    MEMORY_ID=$(printf '%s\n' "$RESPONSE" | jq -r '.id')
     echo "✅ グローバル決定を記録しました (ID: $MEMORY_ID)"
 else
     echo "❌ 決定の記録に失敗しました"
@@ -141,14 +141,14 @@ RESULT=$(curl -s --get "$MEMORY_URL/search" \
   --data-urlencode "type=decision" \
   --data-urlencode "scope=project" \
   --data-urlencode "scope_id=$PROJECT_ID")
-COUNT=$(echo "$RESULT" | jq -r '.memories | length')
+COUNT=$(printf '%s\n' "$RESULT" | jq -r '.memories | length')
 
 if [ "$COUNT" = "0" ] || [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
     echo "該当する決定は見つかりませんでした。"
 else
     echo "## 📋 決定一覧（${COUNT}件）"
     echo ""
-    echo "$RESULT" | jq -r '.memories | to_entries | .[] | "\(.key + 1). \(.value.content | split("\n")[0] | .[0:80]) (ID: \(.value.id))"'
+    printf '%s\n' "$RESULT" | jq -r '.memories | to_entries | .[] | "\(.key + 1). \(.value.content | split("\n")[0] | .[0:80]) (ID: \(.value.id))"'
 fi
 ```
 
