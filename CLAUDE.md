@@ -237,11 +237,28 @@ Claude Code CLI がスキルを認識するには、ディレクトリ構造と 
 ---
 name: isac-review
 description: 設計や技術選定を複数のペルソナで検討し、決定を記録します。
+effort: high
 ---
 
 # ISAC Review Skill
 ...
 ```
+
+### Skill ごとの effort（思考エフォート）
+
+フロントマターの `effort` フィールドで、そのスキル実行中の思考エフォートを上書きできる
+（値: `low` / `medium` / `high` / `xhigh` / `max`。対応レベルはモデル依存。スキル終了後は
+セッションの effort に戻る）。ISAC では処理の重さに応じて以下の方針で設定する。
+
+| effort | 対象スキル | 理由 |
+|--------|-----------|------|
+| `xhigh` | `/isac-autopilot` | 設計→実装→テスト→レビューの全工程を一括実行。最も深い推論が必要 |
+| `high` | `/isac-review`, `/isac-code-review`, `/isac-pr-review`, `/isac-notion-design` | 多ペルソナ議論・設計・懐疑的レビューの質が effort に効く |
+| `medium` | `/isac-save-memory`, `/isac-suggest` | 分類・提案の精度を確保しつつコストは抑える |
+| `low` | `/isac-todo`, `/isac-later`, `/isac-memory`, `/isac-decide` | API 呼び出し＋整形が主体。高 effort は不要 |
+
+**新規スキル追加時**: 上表の区分に倣って `effort` を設定すること（多ペルソナ/設計/実装系は
+`high` 以上、CRUD・整形系は `low`）。`model` は原則未指定（セッション継承）とする。
 
 ## ナレッジ共有と承認フロー
 

@@ -1,6 +1,7 @@
 ---
 name: isac-later
 description: 「後でやる」タスクを素早く記録します。/isac-todo add のエイリアスです。
+effort: low
 ---
 
 # ISAC Later Skill

@@ -1,6 +1,7 @@
 ---
 name: isac-save-memory
 description: タスク完了時に、AIが作業内容を分析し、記憶/Skill/Hooksのどれで保存すべきか提案します。
+effort: medium
 ---
 
 # ISAC Save Memory Skill

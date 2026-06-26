@@ -1,6 +1,7 @@
 ---
 name: isac-pr-review
 description: GitHub PRを4人のペルソナで多角的にレビューし、スコアリング結果をPRコメントに投稿します（日本語/英語セクション分離）。
+effort: high
 ---
 
 # ISAC PR Review Skill

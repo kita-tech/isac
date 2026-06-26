@@ -1,6 +1,7 @@
 ---
 name: isac-todo
 description: 個人の未完了タスクを管理します。翌日の作業継続に便利です。
+effort: low
 ---
 
 # ISAC Todo Skill

@@ -1,6 +1,7 @@
 ---
 name: isac-memory
 description: プロジェクトの長期記憶を管理します。
+effort: low
 ---
 
 # ISAC Memory Skill

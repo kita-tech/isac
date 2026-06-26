@@ -1,6 +1,7 @@
 ---
 name: isac-code-review
 description: コードを4人のペルソナで多角的にレビューし、スコアリングと改善点を明示します（日本語/英語セクション分離）。
+effort: high
 ---
 
 # ISAC Code Review Skill
