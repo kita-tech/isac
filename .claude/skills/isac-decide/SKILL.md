@@ -1,6 +1,7 @@
 ---
 name: isac-decide
 description: 重要な技術的決定を記録します。
+effort: low
 ---
 
 # ISAC Decide Skill

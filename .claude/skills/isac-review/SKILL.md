@@ -1,6 +1,7 @@
 ---
 name: isac-review
 description: 設計や技術選定を複数のペルソナで検討し、決定を記録します。
+effort: high
 ---
 
 # ISAC Review Skill

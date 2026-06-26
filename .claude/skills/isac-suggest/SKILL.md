@@ -1,6 +1,7 @@
 ---
 name: isac-suggest
 description: 現在の状況を分析し、適切なSkillを提案します。
+effort: medium
 ---
 
 # ISAC Suggest Skill

@@ -1,6 +1,7 @@
 ---
 name: isac-notion-design
 description: Notionに記載されたシステムの概要から設計を行います。
+effort: high
 ---
 
 # ISAC Notion Design Skill

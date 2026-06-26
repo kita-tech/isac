@@ -1,6 +1,7 @@
 ---
 name: isac-autopilot
 description: 要件からコンテキスト収集・設計・実装・テスト・レビュー・Draft PR作成までを自動実行します。
+effort: xhigh
 ---
 
 # ISAC Autopilot Skill
