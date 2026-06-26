@@ -1,4 +1,20 @@
 {
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(git:*)",
+      "Bash(gh pr:*)",
+      "Bash(pytest:*)",
+      "Bash(bash tests/run_all_tests.sh:*)",
+      "Bash(curl http://localhost:8100/*)",
+      "Bash(jq:*)",
+      "Bash(chmod:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(git push --force:*)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
