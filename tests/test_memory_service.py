@@ -3138,7 +3138,10 @@ class TestTodoMetadata:
         assert response.status_code == 200
         data = response.json()
         assert data.get("warnings"), "owner 未指定時は warnings が返るべき"
-        assert any("owner" in w for w in data["warnings"])
+        owner_warnings = [w for w in data["warnings"] if "owner" in w]
+        assert owner_warnings, "owner に関する警告があるべき"
+        # owner の警告は1件のみ（専用メッセージと汎用必須チェックで重複しないこと）
+        assert len(owner_warnings) == 1, f"owner 警告が重複している: {owner_warnings}"
 
     def test_todo_owner_explicit_preserved(self):
         """owner を明示指定した場合はそのまま保持され、警告は出ない"""

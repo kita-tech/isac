@@ -297,6 +297,7 @@ def enforce_type_metadata(entry: "MemoryEntry", current_user: "Optional[CurrentU
         return warnings
 
     md = entry.metadata
+    warned_keys: set[str] = set()  # 既に専用メッセージで警告したキー（汎用チェックでの重複を防ぐ）
 
     # todo の owner 自動補完
     if entry.type == MemoryType.TODO and not md.get("owner"):
@@ -309,6 +310,7 @@ def enforce_type_metadata(entry: "MemoryEntry", current_user: "Optional[CurrentU
                 "owner の無い todo は /my/todos の owner フィルタに現れません。"
                 "isac-todo スキル経由での登録、または metadata.owner の明示指定を推奨します。"
             )
+            warned_keys.add("owner")
 
     # デフォルト値の補完（status など）
     for key, default_value in schema.get("defaults", {}).items():
@@ -316,8 +318,9 @@ def enforce_type_metadata(entry: "MemoryEntry", current_user: "Optional[CurrentU
             md[key] = default_value
 
     # required キーの欠落チェック（補完後にまだ無いものを警告）
+    # 専用メッセージで既に警告済みのキー（owner 等）は重複させない
     for key in schema.get("required", []):
-        if not md.get(key):
+        if not md.get(key) and key not in warned_keys:
             warnings.append(f"type={entry.type.value} に metadata.{key} が未指定です。")
 
     # enum 検証（不正値は明確なエラー）
