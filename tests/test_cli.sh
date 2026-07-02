@@ -529,6 +529,43 @@ else
     test_fail "init のバリデーション" "エラーメッセージが表示されない"
 fi
 
+# 12-6. init が settings.json に ISAC のコマンド許可(permissions.allow)を配布する
+#       （他プロジェクトで isac スキルの curl/jq/git 等の実行確認が多発する問題への対策）
+if jq -e '.permissions.allow | index("Bash(git:*)") and index("Bash(jq:*)")' .claude/settings.json >/dev/null 2>&1; then
+    test_pass "init で settings.json に git/jq の許可が配布される"
+else
+    test_fail "permissions 配布" ".permissions.allow に git/jq が無い"
+fi
+if jq -e '.permissions.defaultMode == "acceptEdits"' .claude/settings.json >/dev/null 2>&1; then
+    test_pass "init で defaultMode=acceptEdits が設定される"
+else
+    test_fail "defaultMode" "acceptEdits でない"
+fi
+if jq -e '.permissions.deny | index("Bash(git push --force:*)")' .claude/settings.json >/dev/null 2>&1; then
+    test_pass "init で危険コマンド(force push)が deny される"
+else
+    test_fail "deny 配布" "force push が deny に無い"
+fi
+
+# 12-7. 既存 settings.json への再init はマージ（非破壊・ユーザー独自allow/キーを保持・冪等）
+jq '.permissions.allow += ["Bash(npm:*)"] | .userCustom = "keep-me"' .claude/settings.json > .claude/_s.json && mv .claude/_s.json .claude/settings.json
+BEFORE_LEN=$(jq '.permissions.allow | length' .claude/settings.json)
+"$ISAC_CMD" init --yes >/dev/null 2>&1
+if jq -e '.permissions.allow | index("Bash(npm:*)") and index("Bash(git:*)")' .claude/settings.json >/dev/null 2>&1 \
+   && jq -e '.userCustom == "keep-me"' .claude/settings.json >/dev/null 2>&1; then
+    test_pass "再init は既存 settings.json を壊さずマージする（独自allow/キー保持）"
+else
+    test_fail "permissions マージ" "既存の独自 allow/キーが失われた"
+fi
+# 冪等性: もう一度 init しても allow 件数が増えない
+"$ISAC_CMD" init --yes >/dev/null 2>&1
+AFTER_LEN=$(jq '.permissions.allow | length' .claude/settings.json)
+if [ "$BEFORE_LEN" = "$AFTER_LEN" ]; then
+    test_pass "再init のマージは冪等（allow が重複しない）"
+else
+    test_fail "マージ冪等性" "allow 件数が変化した ($BEFORE_LEN → $AFTER_LEN)"
+fi
+
 rm -rf "$TEST_DIR"
 cd "$SCRIPT_DIR"
 

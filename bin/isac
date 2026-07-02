@@ -684,11 +684,65 @@ setup_statusline() {
     fi
 }
 
+# ISAC スキルが実行するコマンドの許可設定（single source of truth）
+# 他プロジェクトで isac スキルを使うと curl/jq/git/gh 等の実行確認が多発するため、
+# init 時にプロジェクトの settings.json へ配布する。git push --force 等は deny で保護。
+# 出力: permissions オブジェクト（jq 生成）
+isac_permissions_json() {
+    jq -n '{
+        defaultMode: "acceptEdits",
+        allow: [
+            "Bash(git:*)",
+            "Bash(gh pr:*)",
+            "Bash(gh api repos:*)",
+            "Bash(gh auth status:*)",
+            "Bash(curl http://localhost:8100/*)",
+            "Bash(jq:*)",
+            "Bash(grep:*)",
+            "Bash(sed:*)",
+            "Bash(printf:*)",
+            "Bash(tr:*)",
+            "Bash(date:*)",
+            "Bash(cat:*)",
+            "Bash(mkdir:*)",
+            "Bash(chmod:*)",
+            "Bash(bash .claude/hooks/sensitive-filter.sh:*)"
+        ],
+        deny: [
+            "Bash(rm -rf /*)",
+            "Bash(git push --force:*)",
+            "Bash(git push --force-with-lease:*)"
+        ]
+    }'
+}
+
+# 既存 settings.json に ISAC の permissions を非破壊マージする
+# （既存の allow/deny は unique で和集合、defaultMode はユーザー設定を尊重＝未設定時のみ付与）
+merge_permissions_into_settings() {
+    local settings_file=".claude/settings.json"
+    local perms tmp
+    perms=$(isac_permissions_json)
+    tmp=$(mktemp)
+    if jq --argjson p "${perms}" '
+        .permissions //= {} |
+        .permissions.allow = ((.permissions.allow // []) + $p.allow | unique) |
+        .permissions.deny  = ((.permissions.deny  // []) + $p.deny  | unique) |
+        .permissions.defaultMode = (.permissions.defaultMode // $p.defaultMode)
+    ' "${settings_file}" > "${tmp}" 2>/dev/null && [ -s "${tmp}" ]; then
+        mv "${tmp}" "${settings_file}"
+        echo -e "  ${GREEN}✓${NC} Merged ISAC command permissions into .claude/settings.json"
+    else
+        rm -f "${tmp}"
+        echo -e "  ${YELLOW}⚠${NC} Failed to merge permissions (settings.json unchanged). Check jq/JSON validity." >&2
+    fi
+}
+
 # settings.json を新規作成（Claude Code CLI 公式形式）
 create_settings_json() {
     local settings_file=".claude/settings.json"
 
-    jq -n '{
+    jq -n --argjson permissions "$(isac_permissions_json)" '{
+        permissions: $permissions,
         hooks: {
             SessionStart: [
                 {
@@ -746,6 +800,9 @@ setup_claude_directory() {
     # ========================================
     if [ ! -f ".claude/settings.json" ] || [ "${force}" = true ]; then
         create_settings_json
+    else
+        # 既存プロジェクトを壊さずに ISAC の許可設定だけ追記する（再initで治癒）
+        merge_permissions_into_settings
     fi
 
     # 古い settings.yaml が残っている場合
