@@ -1029,6 +1029,10 @@ echo "----------------------------------------"
 echo "on-session-start.sh テスト"
 echo "----------------------------------------"
 
+# 更新チェックの環境依存フレークを排除する（ローカルが origin より後ろだと
+# "Update available" バナーが出てサマリが隠れ、プロジェクトID等のアサートが落ちるため）。
+export ISAC_SKIP_UPDATE_CHECK=1
+
 # テスト1: 正常時に1行サマリーを出力
 echo "project_id: test-session-start" > "$TEST_DIR/.isac.yaml"
 cd "$TEST_DIR"
@@ -1165,6 +1169,8 @@ else
 fi
 
 echo ""
+
+unset ISAC_SKIP_UPDATE_CHECK
 
 # ========================================
 # isac CLI のテスト

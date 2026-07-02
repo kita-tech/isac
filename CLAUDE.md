@@ -176,6 +176,10 @@ isac status --no-cache
 export ISAC_NO_CACHE=1
 ```
 
+**セッション開始バナーの抑止**: `on-session-start.sh` はローカルがリモートより後ろだと
+「ISAC: Update available」バナーを表示し、1行サマリーを隠す。`ISAC_SKIP_UPDATE_CHECK=1` で
+更新チェックをスキップしてサマリーを常に表示できる（テストの決定化・バナー抑止用）。
+
 **Claude Code CLI での動作**: ユーザーが Claude Code CLI 内で `isac status` と入力した場合、on-prompt フックが `isac status` bash コマンドを自動実行し、バージョン情報を含むフル出力をコンテキストに注入する。Claude はこの出力をそのまま表示すること。
 
 ## コーディング規約
