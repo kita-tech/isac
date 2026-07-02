@@ -1118,6 +1118,44 @@ cd "$SCRIPT_DIR"
 echo ""
 
 # ========================================
+# テスト19.5: Workflows 配布と Git管理保護
+# ========================================
+echo -e "${BLUE}テスト19.5: Workflows 配布${NC}"
+echo "----------------------------------------"
+
+# 19.5-1. isac install で ~/.isac/workflows/ に配布される
+"$ISAC_CMD" install >/dev/null 2>&1
+if [ -f "$HOME/.isac/workflows/isac-review-agents.js" ]; then
+    test_pass "isac install で ~/.isac/workflows/ に workflow が配布される"
+else
+    test_fail "Workflows 配布" "~/.isac/workflows/isac-review-agents.js が無い"
+fi
+
+# 19.5-2. Git管理された workflows は init でシンボリックリンクに置き換えられない
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+git init --quiet
+mkdir -p .claude/workflows
+echo "export const meta = { name: 'isac-git-wf', description: 'x' }" > .claude/workflows/isac-git-wf.js
+git add .claude/workflows/
+git commit -m "Add git-managed workflow" --quiet
+OUTPUT=$("$ISAC_CMD" init "git-wf-test" --yes --force 2>&1)
+if [ -f ".claude/workflows/isac-git-wf.js" ] && [ ! -L ".claude/workflows/isac-git-wf.js" ]; then
+    test_pass "Git管理された workflow がシンボリックリンクに置き換えられない"
+else
+    test_fail "Git管理 workflow の保護" ".claude/workflows/isac-git-wf.js が置き換え/消失"
+fi
+if echo "$OUTPUT" | grep -q "skipped symlink"; then
+    test_pass "Git管理 workflow の場合 'skipped symlink' が表示される"
+else
+    test_fail "workflow skipped symlink メッセージ" "Output に skipped symlink なし"
+fi
+rm -rf "$TEST_DIR"
+cd "$SCRIPT_DIR"
+
+echo ""
+
+# ========================================
 # クリーンアップ
 # ========================================
 rm -f "$_LOAD_SECRETS_FUNC_FILE" 2>/dev/null
