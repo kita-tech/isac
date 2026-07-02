@@ -526,6 +526,7 @@ open htmlcov/index.html
 - MCP APIキーはプロジェクトごとに `.isac.secrets.yaml` で管理する（`.isac.secrets.yaml` > 環境変数の優先順位）
 - `.isac.secrets.yaml` は `KEY: VALUE` フラットYAMLのみサポート（ネスト非対応）
 - 許可キーをホワイトリストで制限（`NOTION_API_TOKEN`, `CONTEXT7_API_KEY`のみ。環境変数インジェクション防止）
+- `isac init` はプロジェクトの `.claude/settings.json` に **ISAC スキル用のコマンド許可（`permissions.allow`）** を配布する（他プロジェクトで `curl`/`jq`/`git`/`gh` 等の実行確認が多発する問題への対策）。許可は `bin/isac` の `isac_permissions_json()` が単一定義。`git push --force` 等は `deny` で保護。`defaultMode` は `acceptEdits`。既存の `settings.json` には**非破壊マージ**（`allow`/`deny` は unique で和集合、`defaultMode` は未設定時のみ付与、ユーザー独自キーは保持。冪等）するため、**既存プロジェクトは `isac init` を再実行すれば治癒**する。
 
 ## 記憶の廃止機能
 
