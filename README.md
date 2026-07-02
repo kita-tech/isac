@@ -13,6 +13,7 @@ ISACは**複数プロジェクトを切り替えながら開発**でき、**チ�
 - **軽量**: Dockerコンテナ1つ（Memory Service）
 - **高速起動**: 即座に利用可能
 - **セキュリティ**: 機密情報の自動フィルタリング
+- **マルチエージェントレビュー**: `--agents`（多レンズ並列＋🔴独立検証）／`--dialectic`（弁証法で意思決定）による Workflow ベースのレビュー
 
 ## クイックスタート
 
@@ -62,7 +63,7 @@ cd /path/to/your/project
 
 # プロジェクト初期化
 # → .isac.yaml、.isac.secrets.yaml.example を作成
-# → .claude/ ディレクトリをセットアップ（hooks/skills のシンボリックリンク）
+# → .claude/ ディレクトリをセットアップ（hooks/skills/agents/workflows のシンボリックリンク）
 # → MCPサーバー（notion, context7）を自動登録
 # → プロジェクト名を聞かれるので入力（デフォルトは既存.isac.yamlの値 or ディレクトリ名）
 isac init
@@ -81,7 +82,8 @@ claude
 | `isac init` | プロジェクト初期化（再初期化時は既存設定を引き継ぎ） | 新しいプロジェクトを始めるとき |
 | `isac init --yes` | 確認なしで初期化（CI/CD向け） | 自動化スクリプトで使う |
 | `isac init --force` | 既存設定を上書きして再初期化 | 設定をリセットしたいとき |
-| `isac status` | 現在のプロジェクト情報・Memory Service接続状況を表示 | 状態確認したいとき |
+| `isac status` | 現在のプロジェクト情報・Memory Service接続状況・バージョン情報を表示 | 状態確認したいとき |
+| `isac status --no-cache` | リモート更新チェックのキャッシュを無視して最新取得 | 更新直後に最新状態を確認したいとき |
 | `isac projects` | 登録済みの全プロジェクト一覧を表示 | どんなプロジェクトがあるか確認 |
 
 ### isac init の動作
@@ -101,7 +103,9 @@ claude
 └── .claude/                   # Claude Code CLI設定（自動作成）
     ├── settings.json          # Hooks設定ファイル（JSON形式）
     ├── hooks/                 # ~/.isac/hooks/ へのシンボリックリンク
-    └── skills/                # ~/.isac/skills/ へのシンボリックリンク
+    ├── skills/                # ~/.isac/skills/ へのシンボリックリンク
+    ├── agents/                # ~/.isac/agents/ へのシンボリックリンク（サブエージェント定義）
+    └── workflows/             # ~/.isac/workflows/ へのシンボリックリンク（マルチエージェントWorkflow）
 ```
 
 3. **MCPサーバーの自動登録**
@@ -146,6 +150,7 @@ $ isac init
 │                Claude Code CLI                       │
 │  ┌───────────────────────────────────────────────┐  │
 │  │ Hooks（~/.isac/hooks/ または .claude/hooks/）   │  │
+│  │  - on-session-start.sh: 起動時ステータス表示   │  │
 │  │  - on-prompt.sh: 関連記憶を自動表示            │  │
 │  │  - on-stop.sh: タスク完了時のAI分類            │  │
 │  │  - post-edit.sh: 作業履歴を自動保存            │  │
@@ -178,6 +183,10 @@ $ isac init
 │  - 全体共有       - チーム共有     - プロジェクト固有 │
 └─────────────────────────────────────────────────────┘
 ```
+
+> **Agents / Workflows**: 上記の Skills に加え、`~/.isac/agents/`（サブエージェント定義: memory-classifier ほか）と
+> `~/.isac/workflows/`（マルチエージェントWorkflow: `isac-review-agents` / `isac-review-issues` / `isac-review-dialectic` /
+> `isac-pr-review-issues`）が配布されます。`/isac-review --agents` や `/isac-pr-review --agents`、`--dialectic` から利用されます。
 
 ## 記憶の階層
 
@@ -273,46 +282,47 @@ isac/
 ├── .claude/
 │   ├── settings.json           # Hooks設定（MCPサーバーは~/.claude.jsonで管理）
 │   ├── hooks/
+│   │   ├── _log.sh             # 共有ログ関数
+│   │   ├── on-session-start.sh # セッション開始時の軽量ステータス表示
 │   │   ├── on-prompt.sh        # 記憶検索
 │   │   ├── on-stop.sh          # タスク完了時のAI分類プロンプト
 │   │   ├── post-edit.sh        # 記憶保存
 │   │   ├── resolve-project.sh  # プロジェクトID解決
 │   │   ├── save-memory.sh      # AI分類結果の記憶保存
 │   │   └── sensitive-filter.sh # 機密情報フィルター
-│   └── skills/                 # ディレクトリ構造
-│       ├── isac-autopilot/
-│       │   └── SKILL.md
-│       ├── isac-code-review/
-│       │   └── SKILL.md
-│       ├── isac-decide/
-│       │   └── SKILL.md
-│       ├── isac-later/
-│       │   └── SKILL.md
-│       ├── isac-memory/
-│       │   └── SKILL.md
-│       ├── isac-notion-design/
-│       │   └── SKILL.md
-│       ├── isac-pr-review/
-│       │   └── SKILL.md
-│       ├── isac-review/
-│       │   └── SKILL.md
-│       ├── isac-save-memory/
-│       │   └── SKILL.md
-│       ├── isac-suggest/
-│       │   └── SKILL.md
-│       └── isac-todo/
-│           └── SKILL.md
+│   ├── skills/                 # Skill定義（isac-autopilot / isac-review / isac-code-review /
+│   │   │                       #   isac-pr-review / isac-memory / isac-decide / isac-suggest /
+│   │   │                       #   isac-save-memory / isac-notion-design / isac-todo / isac-later）
+│   │   └── <skill-name>/SKILL.md
+│   ├── agents/                 # サブエージェント定義
+│   │   ├── memory-classifier.md
+│   │   ├── memory-editor.md
+│   │   └── memory-searcher.md
+│   └── workflows/              # マルチエージェントWorkflowスクリプト
+│       ├── isac-review-agents.js     # --agents（多レンズ投票）
+│       ├── isac-review-issues.js     # --agents レビュー版（issue-finding＋🔴検証）
+│       ├── isac-review-dialectic.js  # --dialectic（弁証法・意思決定）
+│       └── isac-pr-review-issues.js  # PRレビュー徹底版
+├── docs/                       # 設計・ガイド
+│   ├── DESIGN_isac-review-agents.md
+│   ├── MEMORY_SERVICE.md
+│   └── TEST_DESIGN_GUIDE.md
 ├── memory-service/
 │   ├── docker-compose.yml
+│   ├── docker-compose.test.yml
 │   ├── Dockerfile
 │   ├── main.py
-│   └── requirements.txt
+│   ├── requirements.txt
+│   └── README.md
+├── tests/                      # テストスイート
 └── README.md
 
 ~/.isac/                        # グローバル設定
 ├── config.yaml
 ├── hooks/                      # グローバルHooks
-└── skills/                     # グローバルSkills
+├── skills/                     # グローバルSkills
+├── agents/                     # グローバルAgents
+└── workflows/                  # グローバルWorkflows
 ```
 
 ## 環境変数
