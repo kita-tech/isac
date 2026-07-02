@@ -192,6 +192,14 @@ cmd_install() {
         echo -e "${YELLOW}  Warning: Source agents not found${NC}"
     fi
 
+    # Workflows コピー（マルチエージェント Workflow スクリプト）
+    mkdir -p "${ISAC_GLOBAL_DIR}/workflows"
+    if [ -d "${ISAC_SOURCE_DIR}/.claude/workflows" ]; then
+        rm -rf "${ISAC_GLOBAL_DIR}/workflows/"*
+        cp -rf "${ISAC_SOURCE_DIR}/.claude/workflows/"* "${ISAC_GLOBAL_DIR}/workflows/" 2>/dev/null || true
+        echo -e "  Copied workflows to ${ISAC_GLOBAL_DIR}/workflows/"
+    fi
+
     # CLAUDE.md コピー（~/.isac/CLAUDE.md → ~/.claude/CLAUDE.md）
     echo -e "${GREEN}[5/7] Setting up CLAUDE.md...${NC}"
     if [ -f "${ISAC_SOURCE_DIR}/templates/CLAUDE.md.template" ]; then
@@ -293,6 +301,14 @@ cmd_update() {
     if [ -d "${ISAC_SOURCE_DIR}/.claude/agents" ]; then
         cp -f "${ISAC_SOURCE_DIR}/.claude/agents/"*.md "${ISAC_GLOBAL_DIR}/agents/" 2>/dev/null || true
         echo -e "  Updated agents"
+    fi
+
+    # Workflows 更新（マルチエージェント Workflow スクリプト）
+    mkdir -p "${ISAC_GLOBAL_DIR}/workflows"
+    if [ -d "${ISAC_SOURCE_DIR}/.claude/workflows" ]; then
+        rm -rf "${ISAC_GLOBAL_DIR}/workflows/"*
+        cp -rf "${ISAC_SOURCE_DIR}/.claude/workflows/"* "${ISAC_GLOBAL_DIR}/workflows/" 2>/dev/null || true
+        echo -e "  Updated workflows"
     fi
 
     # CLAUDE.md 更新（~/.isac/CLAUDE.md → ~/.claude/CLAUDE.md）
@@ -723,7 +739,7 @@ setup_claude_directory() {
     echo -e "${GREEN}Setting up .claude/ directory...${NC}"
 
     # ディレクトリ作成
-    mkdir -p .claude/hooks .claude/skills .claude/agents
+    mkdir -p .claude/hooks .claude/skills .claude/agents .claude/workflows
 
     # ========================================
     # settings.json の作成
@@ -821,6 +837,31 @@ setup_claude_directory() {
         echo -e "  ${GREEN}✓${NC} Linked ${agent_count} agents from ~/.isac/agents/"
     fi
 
+    # Workflowsシンボリックリンク（マルチエージェント Workflow スクリプト）
+    if [ ! -d "${ISAC_GLOBAL_DIR}/workflows" ]; then
+        echo -e "  ${YELLOW}⚠${NC} Global workflows not found (~/.isac/workflows/)"
+        echo "     Run 'isac install' first to set up global configuration."
+    else
+        # Git管理された workflows がある場合はシンボリックリンク作成をスキップ（skills と同様）
+        if git ls-files --error-unmatch .claude/workflows/ >/dev/null 2>&1; then
+            local wf_count
+            wf_count=$(ls -1 .claude/workflows/*.js 2>/dev/null | wc -l | tr -d ' ')
+            echo -e "  ${GREEN}✓${NC} Workflows: ${wf_count} Git-managed workflows (skipped symlink)"
+        else
+            rm -rf .claude/workflows/*
+            for wf_file in "${ISAC_GLOBAL_DIR}/workflows/"*.js; do
+                if [ -f "${wf_file}" ]; then
+                    local filename
+                    filename=$(basename "${wf_file}")
+                    ln -sf "${wf_file}" ".claude/workflows/${filename}"
+                fi
+            done
+            local wf_count
+            wf_count=$(ls -1 .claude/workflows/*.js 2>/dev/null | wc -l | tr -d ' ')
+            echo -e "  ${GREEN}✓${NC} Linked ${wf_count} workflows from ~/.isac/workflows/"
+        fi
+    fi
+
     # ========================================
     # .gitignore への追記提案
     # ========================================
@@ -829,6 +870,7 @@ setup_claude_directory() {
     echo "  .claude/hooks/"
     echo "  .claude/skills/"
     echo "  .claude/agents/"
+    echo "  .claude/workflows/"
     echo ""
     echo "  These are symlinks to your local ~/.isac/ directory."
     echo "  Team members should run 'isac init --force' to create their own links."
