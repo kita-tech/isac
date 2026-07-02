@@ -262,7 +262,7 @@ fi
 **目的（実測で再定義）**: 当初は「アンカリング低減」を狙ったが、A/B 実測でそれは達成されず（決定用途は `--dialectic` が担当）。`--agents` の実価値は**多レンズ並列＋実行接地で対象の問題を網羅的に洗い出す“徹底レビュー”**にあった。実装 `.claude/workflows/isac-review-issues.js`、設計は `docs/DESIGN_isac-review-agents.md`。
 
 > **用途**: 設計/コード/計画などの**レビュー（問題の網羅列挙）**。**A vs B の意思決定には使わない → `--dialectic` を使う**。
-> **注**: severity インフレ傾向がある。🔴 は adversarial-verify（別体で偽陽性チェック）を経て確定するのが望ましいが、**この工程は未実装**（isac-review-issues.js に検証段は無い）。偽陽性率の抑制は今後 issue-finding 側で実装・A/B実測する次段階の課題。
+> **注**: severity インフレ対策の **adversarial-verify を実装済み**（`isac-review-issues.js` の Verify 段）。🔴High 指摘のみ独立反証者（迷ったら偽陽性/降格に倒す）が接地検証し、confirmed / downgrade / false_positive に再分類する。検証エージェント失敗(null)は安全側で🔴に昇格させない。出力の `verification.raw_high` vs `confirmed_high` で **インフレ量が可視化**される。med/low は対象外（コスト対効果）。偽陽性率の A/B 実測は次段階。
 > 下記「フラグ（3直交軸）」以降は初期の投票式 --agents の仕様（決定用途）で、現在は `--dialectic` に置き換え推奨。レビュー用途では issue-finding workflow を用いる。
 
 <details><summary>（旧）投票式 --agents の仕様（決定用途・--dialectic に置換推奨）</summary>
