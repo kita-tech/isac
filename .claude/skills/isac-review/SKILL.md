@@ -235,9 +235,37 @@ fi
 
 **必須ルール**: ペルソナ数に関わらず、**最低1人は懐疑的レビュアーを含めること**。`--quick`（2人）の場合でも、1人は専門家、1人は懐疑的レビュアーとする。
 
-## エージェントチームモード（`--agents`）
+## モードの使い分け（実測に基づく・重要）
 
-**目的**: 既定のインライン方式（1体が4ペルソナを順に演じる）は、後続ペルソナが前の意見に同調する**アンカリング/収束バイアス**を持つ。`--agents` は各ペルソナを**別コンテキストのエージェントとしてブラインド並列起動**し、同調を構造的に減らす。実装は Workflow スクリプト `.claude/workflows/isac-review-agents.js`、設計は ISAC の `docs/DESIGN_isac-review-agents.md`。
+`isac-review` のタスクは大きく2種類あり、**A/B 実測（N=5、`docs/DESIGN_isac-review-agents.md` §8）で最適モードが分かれた**：
+
+| やりたいこと | 推奨モード | 実装 |
+|-------------|-----------|------|
+| **選択肢の意思決定**（A vs B を選ぶ） | **`--dialectic`（弁証法）** | `.claude/workflows/isac-review-dialectic.js` |
+| **徹底レビュー**（設計/コードの問題を多レンズで網羅） | **`--agents`**（レビュー版・issue-finding） | `.claude/workflows/isac-review-issues.js` |
+| 軽量レビュー・軽い相談 | **インライン**（既定） | このスキル本体 |
+
+> **実測の要点**: 「A vs B の決定」では投票式は少数案が収束で潰れるため、**立場を割り当てて steelman を義務化する弁証法が少数案を最強のまま保持**し switching condition と較正 confidence を出す（N=5 で確認）。一方「問題の網羅レビュー」では**多レンズ並列（--agents）が inline の約2倍の issue を接地して拾う**（ただし severity インフレ傾向あり）。
+
+## 弁証法モード（`--dialectic`）— 意思決定用
+
+**目的**: 選択肢間の意思決定で、**負ける案を最強の論拠のまま保持**する（投票式が構造的にできなかったアンカリング対策）。各選択肢に advocate を割り当て（信念でなく割当てを steelman）→ 相互反駁 → 擁護に不参加の独立ジャッジが weigh。
+
+**起動**: 議題が離散選択（例「JWT vs セッション」）のとき、Workflow を `{ name: "isac-review-dialectic", args: { topic, context, options: [...] } }` で起動（Skill が指示＝明示オプトイン）。選択肢は2〜6個・重複不可。
+
+**出力（推奨レポート）**: 各案の steelman（strongest_case・key_evidence・先回り封じ）／相互反駁／独立ジャッジの `recommendation`・`confidence`（low/med/high）・`decisive_factors`・`residual_risks`（推奨案に残るリスク）・**`losing_option_standing`（負ける案の“勝ち条件”）**。**投票ではない。** 決定は人間が `/isac-decide` で確定（原則9）。
+
+**エージェント数**: 擁護N＋反駁N＋ジャッジ1 ＝ 2N+1（二択で5体）。選択肢数でスケール。
+
+## エージェントチームモード（`--agents`）— 徹底レビュー用（issue-finding）
+
+**目的（実測で再定義）**: 当初は「アンカリング低減」を狙ったが、A/B 実測でそれは達成されず（決定用途は `--dialectic` が担当）。`--agents` の実価値は**多レンズ並列＋実行接地で対象の問題を網羅的に洗い出す“徹底レビュー”**にあった。実装 `.claude/workflows/isac-review-issues.js`、設計は `docs/DESIGN_isac-review-agents.md`。
+
+> **用途**: 設計/コード/計画などの**レビュー（問題の網羅列挙）**。**A vs B の意思決定には使わない → `--dialectic` を使う**。
+> **注**: severity インフレ傾向があるため、🔴 は adversarial-verify（別体で偽陽性チェック）を経て確定するのが望ましい（設計 §8.3）。
+> 下記「フラグ（3直交軸）」以降は初期の投票式 --agents の仕様（決定用途）で、現在は `--dialectic` に置き換え推奨。レビュー用途では issue-finding workflow を用いる。
+
+<details><summary>（旧）投票式 --agents の仕様（決定用途・--dialectic に置換推奨）</summary>
 
 > **対象は同調バイアスのみ**。事実バグ（plausible-but-wrong）は実行検証（§2.5）と別モデルのクロスチェックの担当。
 
@@ -277,6 +305,8 @@ fi
 
 ### 内部呼び出し
 - `/isac-autopilot` 等が内部で isac-review を呼ぶ経路は **`--inline` を明示**する（将来 `--agents` が既定化されてもコスト・レイテンシが静かに暴発しないように）。
+
+</details>
 
 ## 関連スキル
 
