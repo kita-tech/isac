@@ -31,7 +31,11 @@ export const meta = {
 }
 
 // ---- args 正規化 ----
-const A = args || {}
+// tool 経由の args は JSON 文字列で届くことがあるため、文字列ならパースする
+let A = args || {}
+if (typeof A === 'string') {
+  try { A = JSON.parse(A) } catch (e) { A = {} }
+}
 const TOPIC = A.topic || '(議題未指定)'
 const CONTEXT = A.context || '(レビュー材料未指定)'
 const OPTIONS = Array.isArray(A.options) ? A.options.filter(Boolean) : []
