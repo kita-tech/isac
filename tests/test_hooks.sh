@@ -70,6 +70,22 @@ assert_contains() {
     fi
 }
 
+assert_not_contains() {
+    local haystack="$1"
+    local needle="$2"
+    local message="$3"
+
+    if [[ "$haystack" != *"$needle"* ]]; then
+        echo -e "${GREEN}✓ PASS${NC}: $message"
+        PASSED=$((PASSED + 1))
+    else
+        echo -e "${RED}✗ FAIL${NC}: $message"
+        echo "  Expected NOT to contain: $needle"
+        echo "  Actual: $haystack"
+        FAILED=$((FAILED + 1))
+    fi
+}
+
 # ファイル内に指定パターン（grep正規表現）が存在するか検証
 assert_file_grep() {
     local file="$1"
@@ -357,6 +373,48 @@ else
     echo -e "${RED}✗ FAIL${NC}: 機密情報がマスキングされていない: $FILTERED"
     FAILED=$((FAILED + 1))
 fi
+
+# ========================================
+# 漏洩防止テスト（検出だけでなく「実際にマスクされ資格情報が残らない」ことを検証）
+# 背景: 旧実装は sed の区切り `/` が URL の `//` と衝突してマスク失敗 → `|| echo 原文`
+#       で fail-open し、is_sensitive=true なのに資格情報が平文で残る漏洩があった。
+#       検出(is_sensitive)のみを見る従来テストでは捕捉できなかったため、漏洩そのものを検証する。
+# ========================================
+
+# テスト18a: database_url(postgres) — 資格情報が filtered に残らない
+RESULT=$(echo "DATABASE_URL=postgres://admin:P4ssw0rd@dbhost:5432/prod" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+FILTERED=$(echo "$RESULT" | jq -r '.filtered')
+assert_not_contains "$FILTERED" "P4ssw0rd" "postgres URLのパスワードが漏洩しない"
+assert_not_contains "$FILTERED" "dbhost" "postgres URLのホストが漏洩しない"
+assert_contains "$FILTERED" "[MASKED:database_url]" "postgres URLがマスクされる"
+
+# テスト18b: database_url(mysql) — 資格情報が残らない
+RESULT=$(echo "conn=mysql://root:s3cr3t@10.0.0.1:3306/app" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+FILTERED=$(echo "$RESULT" | jq -r '.filtered')
+assert_not_contains "$FILTERED" "s3cr3t" "mysql URLのパスワードが漏洩しない"
+
+# テスト18c: database_url(mongodb+srv) — 資格情報が残らない
+RESULT=$(echo "mongodb+srv://user:mongopw@cluster.mongodb.net/db" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+FILTERED=$(echo "$RESULT" | jq -r '.filtered')
+assert_not_contains "$FILTERED" "mongopw" "mongodb+srv URLのパスワードが漏洩しない"
+
+# テスト18d: 秘密鍵の本体(複数行 base64)がマスクされ漏洩しない
+KEY_INPUT=$(printf -- '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAsecretbodyLINE1\nabc123base64materialLINE2\n-----END RSA PRIVATE KEY-----')
+RESULT=$(printf '%s' "$KEY_INPUT" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+FILTERED=$(echo "$RESULT" | jq -r '.filtered')
+assert_not_contains "$FILTERED" "secretbodyLINE1" "秘密鍵の本体1行目が漏洩しない"
+assert_not_contains "$FILTERED" "base64materialLINE2" "秘密鍵の本体2行目が漏洩しない"
+assert_contains "$FILTERED" "[MASKED:private_key]" "秘密鍵ブロックがマスクされる"
+
+# テスト18e: masking_error フィールド — 正常マスク時は false
+RESULT=$(echo "DATABASE_URL=postgres://a:b@h/d" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+MASK_ERR=$(echo "$RESULT" | jq -r '.masking_error')
+assert_equals "false" "$MASK_ERR" "正常マスク時 masking_error は false"
+
+# テスト18f: 非機密テキストでも masking_error は false（回帰）
+RESULT=$(echo "hello world" | bash "$HOOKS_DIR/sensitive-filter.sh" 2>/dev/null)
+MASK_ERR=$(echo "$RESULT" | jq -r '.masking_error')
+assert_equals "false" "$MASK_ERR" "非機密テキストで masking_error は false"
 
 # テスト19: 引数での入力（パイプではなく）
 RESULT=$(bash "$HOOKS_DIR/sensitive-filter.sh" "api_key=sk-test1234567890abcdef" 2>/dev/null)

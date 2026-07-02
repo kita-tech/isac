@@ -48,7 +48,10 @@ PATTERNS=(
     "database_url:mongodb(\\+srv)?://[^[:space:]]+"
 
     # Private Keys
-    "private_key:-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
+    # 1) PEM ブロック全体（見出し〜END までを複数行でマスク。[\s\S] で改行を跨ぐ）
+    "private_key:-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\\s\\S]*?-----END (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
+    # 2) END が欠けた截断ケースの保険（見出し行だけでもマスク）
+    "private_key:-----(BEGIN|END) (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"
 
     # JWT
     "jwt:eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
@@ -82,32 +85,64 @@ PATTERNS=(
 DETECTED=()
 FILTERED_TEXT="$INPUT_TEXT"
 IS_SENSITIVE="false"
+MASK_ERROR="false"
+
+# 検出とマスキングを perl で行う（理由）:
+#  - sed の `s/.../.../` は区切り文字 `/` を使うため、正規表現に `//`（例: postgres://）が
+#    含まれると構文エラーになり、旧実装は `|| echo 原文` で fail-open して資格情報を平文漏洩していた。
+#    perl は正規表現を「変数展開」で渡すため区切り衝突が原理的に起きない。
+#  - grep/sed は行単位のため PEM 秘密鍵の本体（複数行 base64）をマスクできなかった。
+#    perl -0777（slurp）＋パターンの [\s\S]*? で複数行ブロックをまとめてマスクする。
+
+# 1文字でもマッチするか（perl・slurp・大小無視）。マッチ=0, 非マッチ=1 を返す。
+detect_match() {
+    REGEX="$1" perl -0777 -ne 'exit(($_ =~ /$ENV{REGEX}/i) ? 0 : 1)'
+}
+# マスク適用（perl・slurp・大小無視・全置換）。区切り衝突なし・複数行対応。
+apply_mask() {
+    REGEX="$1" NAME="$2" perl -0777 -pe 's/$ENV{REGEX}/[MASKED:$ENV{NAME}]/gi'
+}
 
 # 各パターンでチェック・マスキング
 for pattern_def in "${PATTERNS[@]}"; do
     PATTERN_NAME="${pattern_def%%:*}"
     PATTERN_REGEX="${pattern_def#*:}"
 
-    # 大文字小文字を無視してマッチ
-    # Note: `--` は必須（パターンが "-" で始まる場合にオプションとして解釈されるのを防ぐ）
-    if echo "$INPUT_TEXT" | grep -iE -- "$PATTERN_REGEX" > /dev/null 2>&1; then
+    if printf '%s' "$INPUT_TEXT" | detect_match "$PATTERN_REGEX"; then
         DETECTED+=("$PATTERN_NAME")
         IS_SENSITIVE="true"
-
-        # マスキング（sedで置換）
-        FILTERED_TEXT=$(echo "$FILTERED_TEXT" | sed -E "s/$PATTERN_REGEX/[MASKED:$PATTERN_NAME]/gi" 2>/dev/null || echo "$FILTERED_TEXT")
+        FILTERED_TEXT=$(printf '%s' "$FILTERED_TEXT" | apply_mask "$PATTERN_REGEX" "$PATTERN_NAME")
     fi
 done
 
-# JSON出力用に配列を整形
+# fail-closed 検証: 検出したパターンがマスク後もまだ残っていれば「マスク失敗」。
+# 旧実装は失敗時に原文を出していた（fail-open）。ここでは絶対に平文を出さず、
+# 残存箇所を強制的に潰し、マスク不能なら全体を安全側で伏せる。
+for pattern_def in "${PATTERNS[@]}"; do
+    PATTERN_NAME="${pattern_def%%:*}"
+    PATTERN_REGEX="${pattern_def#*:}"
+    if printf '%s' "$FILTERED_TEXT" | detect_match "$PATTERN_REGEX"; then
+        MASK_ERROR="true"
+        RETRY=$(printf '%s' "$FILTERED_TEXT" | apply_mask "$PATTERN_REGEX" "$PATTERN_NAME")
+        if printf '%s' "$RETRY" | detect_match "$PATTERN_REGEX"; then
+            # それでも残る＝安全に潰せない。機密を絶対に漏らさないため全体を伏せる。
+            FILTERED_TEXT="[MASKED:masking-failed]"
+            break
+        fi
+        FILTERED_TEXT="$RETRY"
+    fi
+done
+
+# JSON出力用に配列を整形（重複除去。database_url 等は複数パターンが同名のため）
 DETECTED_JSON="[]"
 if [ ${#DETECTED[@]} -gt 0 ]; then
-    DETECTED_JSON=$(printf '%s\n' "${DETECTED[@]}" | jq -R . | jq -s .)
+    DETECTED_JSON=$(printf '%s\n' "${DETECTED[@]}" | jq -R . | jq -s 'unique')
 fi
 
-# 結果をJSON出力
+# 結果をJSON出力（masking_error は後方互換の追加フィールド。true ならマスク失敗を通知）
 jq -n \
     --arg filtered "$FILTERED_TEXT" \
     --argjson detected "$DETECTED_JSON" \
     --argjson is_sensitive "$IS_SENSITIVE" \
-    '{filtered: $filtered, detected: $detected, is_sensitive: $is_sensitive}'
+    --argjson masking_error "$MASK_ERROR" \
+    '{filtered: $filtered, detected: $detected, is_sensitive: $is_sensitive, masking_error: $masking_error}'
