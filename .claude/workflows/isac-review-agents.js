@@ -106,7 +106,7 @@ const round1 = await parallel(ROLES.map((role) => () =>
     { label: `R1:${role.label}`, phase: 'Round1', schema: R1_SCHEMA }
     // 状態を変える検証が要る場合のみ ↓ を有効化（Gemini race 対策・§7）
     // , { label: `R1:${role.label}`, phase: 'Round1', schema: R1_SCHEMA, isolation: 'worktree' }
-  ).then((r) => ({ role: role.label, ...r }))
+  ).then((r) => (r ? { role: role.label, ...r } : null))   // 失敗(null)は保持（{role}のtruthy化でfilterをすり抜けさせない）
 ))
 const r1 = round1.filter(Boolean)
 log(`Round1完了: ${r1.length}/${ROLES.length}体` + (HAS_OPTIONS ? ` / position=${r1.map((v) => v.position).join(',')}` : ''))
@@ -115,8 +115,9 @@ log(`Round1完了: ${r1.length}/${ROLES.length}体` + (HAS_OPTIONS ? ` / positio
 let r2 = null
 if (!BLIND_ONLY && r1.length >= 2) {
   phase('Round2')
-  const round2 = await parallel(ROLES.map((role, i) => () => {
-    const own = r1[i]
+  // r1 を反復（ROLES 基準だと Round1 一部失敗で r1.length<ROLES.length のとき
+  // own=r1[i] と others のインデックスが役割とズレる／脱落分まで無駄 spawn する）
+  const round2 = await parallel(r1.map((own, i) => () => {
     // 他体の意見を匿名化（肩書・人物を伏せ「意見1/2/3」。§5.2 抑制策1）
     const others = r1
       .filter((_, j) => j !== i)
@@ -124,12 +125,12 @@ if (!BLIND_ONLY && r1.length >= 2) {
         ((o.critical_risks || []).length ? ` / 🔴: ${o.critical_risks.join('; ')}` : ''))
       .join('\n')
     return agent(
-      `${COMMON}\n\n【あなたのRound1の立場】position=${own ? own.position : '?'} — ${own ? own.rationale : ''}\n\n` +
+      `${COMMON}\n\n【あなたのRound1の立場】position=${own.position} — ${own.rationale}\n\n` +
       `【他レビュアーの意見（匿名・順不同）】\n${others}\n\n` +
       `これらを踏まえ再評価せよ。立場を変えるなら change_justification に動かした具体的論拠を書け（変えないなら "unchanged"）。` +
       `他意見で誤り・根拠薄弱と思うものは refutations に、新たに気づいた致命的リスクは critical_risks に、その他の新リスクは new_risks に。`,
-      { label: `R2:${role.label}`, phase: 'Round2', schema: R2_SCHEMA }
-    ).then((r) => ({ role: role.label, r1_position: own ? own.position : null, ...r }))
+      { label: `R2:${own.role}`, phase: 'Round2', schema: R2_SCHEMA }
+    ).then((r) => (r ? { role: own.role, r1_position: own.position, ...r } : null))   // 失敗(null)は保持
   }))
   r2 = round2.filter(Boolean)
 } else {
