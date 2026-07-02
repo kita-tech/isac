@@ -11,10 +11,13 @@ GitHub PRを4人のペルソナ + PR固有のチェックでレビューし、�
 ## 使い方
 
 ```
-/isac-pr-review <PR番号>
+/isac-pr-review <PR番号>              # 既定: インライン4ペルソナ（現行動作）
 /isac-pr-review <PR URL>
-/isac-pr-review              # カレントブランチのPRを自動検出
+/isac-pr-review                       # カレントブランチのPRを自動検出
+/isac-pr-review --agents <PR番号>     # 徹底レビュー（多レンズ並列＋独立反証者検証。既定は投稿しない）
 ```
+
+`--agents` の詳細は「徹底レビューモード（`--agents`）」を参照。指定が無ければ従来どおりインラインで動作する（後方互換）。
 
 ## 前提条件
 
@@ -336,9 +339,45 @@ git branch -D pr-review-<PR番号>
 
 | 指定 | 説明 |
 |------|------|
-| `/isac-pr-review` | フルレビュー（PRコメント投稿） |
+| `/isac-pr-review` | フルレビュー（インライン4ペルソナ・PRコメント投稿） |
 | `/isac-pr-review --dry-run` | レビューのみ（コメント投稿なし） |
 | `/isac-pr-review --security` | セキュリティ観点のみ |
+| `/isac-pr-review --agents` | 徹底レビュー（多レンズ並列＋🔴独立検証）。**既定は投稿しない**（要 `--post`） |
+
+## 徹底レビューモード（`--agents`）
+
+**目的**: 既定のインライン4ペルソナ（1体が4役を順に演じる）は役間の盲点が相関し網羅の天井が低い。`--agents` は
+PR の diff を**多レンズで別コンテキスト並列レビュー**し、issue を網羅的に洗い出す。A/B 実測(N=5)で inline 比
+**約2倍の issue coverage** を接地発見。実装は Workflow `.claude/workflows/isac-pr-review-issues.js`、設計は
+`docs/DESIGN_isac-review-agents.md` §8。`/isac-review --agents`（設計レビュー版）の PR 版に当たる。
+
+> **なぜ検証(verify)が必須か**: 多レンズは **severity インフレ傾向**（🔴を過大に付ける）を持つ。実測では
+> raw High 19件中 confirmed 6件（本物のセキュリティバグは接地確認して通り、盛られた🔴は降格/除外）。
+> PRコメントは**公開・不可逆**なので、盛られた🔴を投稿すると作者体験と信頼を損なう。そのため本 workflow は
+> 🔴High を**独立反証者**（迷ったら偽陽性/降格に倒す）で検証し、**confirmed のみを🔴として返す**。
+
+### 実行手順（`--agents` 指定時）
+
+1. **PR 情報取得と worktree 構築**は通常フローと同じ（手順1・1.5）。差分は `gh pr diff <PR>` で取得。
+2. **Workflow を起動**（Skill が指示＝明示オプトイン）:
+   `{ name: "isac-pr-review-issues", args: { pr_number, diff, worktree_path, context } }`
+   - `diff`: `gh pr diff <PR>` の全出力（必須）
+   - `worktree_path`: 手順1.5 の worktree（周辺コード参照・実行接地に使う。無い場合は省略）
+   - `context`: PR タイトル・説明・議論コメント
+3. **結果整形**: 返却オブジェクトの `high`（= confirmed のみ）/`med`/`low` を、既存の日英 PRコメント形式
+   （手順5 のテーブル）の各レンズ欄に流し込む。**🔴は confirmed_high のみ**を載せる。
+4. **ラベル義務（弁証法ジャッジの移行条件）**:
+   - 各指摘に **✅検証済 / ⚠️未検証** を明示する（`verification` の confirmed は✅、diff範囲のみ等は⚠️）。
+   - `verification.raw_high` vs `confirmed_high` を **透明性のため併記**（例「レビュアー指摘🔴 8件のうち検証通過 2件」）。
+   - `filtered_out`（偽陽性/未確定で🔴から落ちたもの）は🔴には載せず、末尾に「検証で除外/降格した指摘」として任意で注記。
+5. **既定は投稿しない（`--dry-run` 相当）**: `--agents` 単体では **PRコメントを投稿せず**、整形結果を提示するに留める。
+   投稿するには **`--agents --post` を明示**する（公開・不可逆な操作の暴発防止。「AIはPRをマージしない」と同型の慎重運用）。
+6. **クリーンアップ**は通常フロー（手順7）と同じく worktree を削除。
+
+### コスト注意
+
+`--agents` は 5レンズ＋🔴の数だけ検証エージェントを spawn する（inline の約5倍のトークン）。
+高頻度の軽量 PR には既定インラインを使い、**重要・大型・セキュリティ重要な PR** に限って `--agents` を使うこと。
 
 ## 使用例
 
@@ -357,6 +396,12 @@ git branch -D pr-review-<PR番号>
 /isac-pr-review
 ```
 → `gh pr view --json number` で自動検出
+
+### 例4: 徹底レビュー（重要・大型PR）
+```
+/isac-pr-review --agents 123          # 多レンズ＋🔴検証。結果を提示のみ（投稿しない）
+/isac-pr-review --agents --post 123   # 検証済み結果を PRコメントに投稿
+```
 
 ## 関連スキル
 
