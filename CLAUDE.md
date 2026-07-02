@@ -412,6 +412,7 @@ gh pr create --title "Add [hook-name] hook" --body "..."
 6. **CLAUDE.mdを必ずコンテキストに含める**: ルール、規約、決定事項が集約されている
 7. **懐疑的レビュアー必須**: ペルソナを使うスキル（`/isac-review`, `/isac-code-review`, `/isac-pr-review`, `/isac-autopilot`）では、ペルソナ数に関わらず最低1人は懐疑的レビュアーを含めること
 8. **correctness は実行で、設計判断はペルソナで**: 後述「レビューの限界と実行検証」を厳守すること
+9. **AI は推奨する、決定は人間が下す**: レビュー系スキル（`/isac-review` 等）の結論は *推奨* であって *チームの決定* ではない。AI の推奨を `type=decision` として自動保存しない（人間が決めていないものが「決定事項」として権威を持って想起されるのを防ぐ）。決定として残すのは人間が明示的に `/isac-decide` で確定した時のみ（＝記憶に "決定" として出るものは必ず人間が著者）。「AI による PR のマージ禁止」と同型の原則。詳細は [docs/DESIGN_isac-review-agents.md](docs/DESIGN_isac-review-agents.md) §11。
 
 ### レビューの限界と実行検証（重要）
 
