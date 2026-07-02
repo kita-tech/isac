@@ -112,6 +112,18 @@ fi
 
 # テスト用コンテナの起動（-p でプロジェクト名を分離し、通常運用コンテナに影響しない）
 echo -e "${YELLOW}テスト用 Memory Service コンテナを起動中 (ポート: ${TEST_PORT})...${NC}"
+
+# base image を事前 pull（ビルダー非依存の堅牢化）。
+# BuildKit は base image が未キャッシュのとき "load metadata" ステップで、
+# docker CLI/engine の世代差がある環境でハングすることがある。先にキャッシュを
+# 満たしておくことで回避する（DOCKER_BUILDKIT=0 は compose v2 で確実に効かないため
+# ビルダー非依存の pull を採用）。pull 失敗時はビルドに委ねる。
+grep -E '^FROM ' "$PROJECT_DIR/memory-service/Dockerfile" | awk '{print $2}' | while read -r base_image; do
+    [ -z "$base_image" ] && continue
+    echo -e "  Base image を事前取得中: ${base_image}"
+    docker pull "$base_image" >/dev/null 2>&1 || echo -e "${YELLOW}  (事前 pull 失敗/スキップ。ビルド時に取得を試みます)${NC}"
+done
+
 docker compose -p "$TEST_PROJECT_NAME" -f "$PROJECT_DIR/memory-service/docker-compose.test.yml" up -d --build 2>&1 | while read -r line; do
     echo "  $line"
 done
