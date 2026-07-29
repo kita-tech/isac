@@ -10,10 +10,18 @@
  * inline 以上に重視する。SKILL 側は本 workflow の confirmed High のみを🔴として提示し、
  * --dry-run 既定＋✅検証済/⚠️未検証ラベルを義務づけること（弁証法ジャッジの移行条件）。
  *
- * args: { pr_number?, diff, worktree_path?, context? }
+ * args: { pr_number?, diff, worktree_path?, context?, model? }
  *   - diff: `gh pr diff <PR>` の出力（レビューの一次対象・必須）
  *   - worktree_path: PR ブランチを checkout した worktree（周辺コード参照・実行接地に使う）
  *   - context: PR タイトル/説明/議論など補助文脈
+ *   - model: レビュー/検証エージェントのモデル（既定 'fable'。'inherit' でセッション継承に戻す）
+ *
+ * モデル方針（CLAUDE.md「Skill ごとの model は原則 inherit」の明示的例外）:
+ *   本 workflow の Review/Verify は既定で Fable 5 に固定する。理由は (1) 出力が公開・不可逆な PR
+ *   コメントであり、issue 発見の網羅性と🔴偽陽性ゲートの判定精度が成果物の質に直結する、(2) その質を
+ *   セッション側のモデル選択に左右させたくない、の2点（＝例外条項「品質の問題が観測された/技術的必然」に該当）。
+ *   固定はエイリアス（'fable'）であり具体 model ID ではないため世代交代で腐らない（agents の 'haiku' と同型）。
+ *   対応外プランのメンバーは args.model で上書きできる（配布事故の回避策）。
  */
 
 export const meta = {
@@ -32,6 +40,8 @@ const PR_NUMBER = A.pr_number || ''
 const DIFF = A.diff || ''
 const WORKTREE = A.worktree_path || ''
 const CONTEXT = A.context || ''
+// 既定 Fable 5 固定。'inherit' 指定時のみ undefined = セッション継承（詳細は冒頭のモデル方針）。
+const MODEL = A.model === 'inherit' ? undefined : (A.model || 'fable')
 if (!DIFF) {
   return { error: 'diff が必須（gh pr diff <PR> の出力を渡すこと）' }
 }
@@ -82,7 +92,7 @@ const reviews = (await parallel(LENSES.map((L) => () =>
     `あなたは【${L.label}】レンズの PR レビュアー。観点: ${L.focus}\n` +
     `この PR の差分を精査し、問題(findings)を列挙せよ。各 finding は severity(high/med/low)、file(リポジトリ相対パス)、area、issue、evidence(diffの該当行や worktree のコード・実行/構文チェック結果で接地)、suggested_fix を持つ。\n` +
     `runnable なら実際に読んで/走らせて確認し、接地しない断定はしない。🔴High は「マージ前必須修正」級に限る。問題が無ければ findings は空配列。`,
-    { label: `REV:${L.label}`, phase: 'Review', schema: SCHEMA }
+    { label: `REV:${L.label}`, phase: 'Review', schema: SCHEMA, model: MODEL }
   ).then((r) => (r ? { ...r, lens: L.label } : null))   // 失敗(null)は保持・lensはコード側を勝たせる
 ))).filter(Boolean)
 
@@ -111,7 +121,7 @@ const verified = rawHigh.length === 0 ? [] : (await parallel(rawHigh.map((f, i) 
     `${WORKTREE ? 'worktree のコードを実際に読んで/走らせて接地して判断せよ。' : 'diff の範囲で接地して判断せよ。'}` +
     `verdict は confirmed(接地でき真に High) / downgrade(実在するが過大→adjusted_severity で med/low) / false_positive(誤り・的外れ)。` +
     `迷ったら confirmed にせず downgrade か false_positive に倒すこと（公開 PR コメントに載る🔴なので偽陽性を通さない側に倒す）。`,
-    { label: `VERIFY:${f.file || f.area}#${i}`, phase: 'Verify', schema: VERIFY_SCHEMA }
+    { label: `VERIFY:${f.file || f.area}#${i}`, phase: 'Verify', schema: VERIFY_SCHEMA, model: MODEL }
   ).then((v) => (v
     ? { ...f, verdict: v.verdict, adjusted_severity: v.adjusted_severity, verify_reasoning: v.reasoning }
     : { ...f, verdict: 'unverified', verify_reasoning: '検証エージェント失敗のため安全側で未確定扱い' }))
@@ -134,6 +144,7 @@ for (const f of all) if (f.file) fileCount[f.file] = (fileCount[f.file] || 0) + 
 return {
   mode: 'pr-review(issue-finding)',
   pr_number: PR_NUMBER || null,
+  model: MODEL || 'inherit',   // レビュー/検証に使ったモデル（レポートに併記して再現性を担保）
   lenses: LENSES.map((l) => l.label),
   total_findings: all.length,
   counts: { high: bySev.high.length, med: bySev.med.length, low: bySev.low.length },
