@@ -809,8 +809,12 @@ Draft PR作成時は以下のフォーマットで本文を作成してくださ
 
 🤖 This PR was created by [ISAC Autopilot](https://github.com/kita-tech/isac)
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude {実行モデル名} <noreply@anthropic.com>
 ```
+
+**注意**: `{実行モデル名}` には実行中のセッションのモデル名（例: `Fable 5`）を入れること。
+コミットの Co-Authored-By も同様。特定のモデル名をテンプレートにハードコードしない
+（CLAUDE.md「Skill ごとの model は原則 inherit」と同趣旨。具体名は世代交代で必ず腐るため）。
 
 ## 重要な制約
 
