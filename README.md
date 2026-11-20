@@ -186,7 +186,7 @@ $ isac init
 
 > **Agents / Workflows**: 上記の Skills に加え、`~/.isac/agents/`（サブエージェント定義: memory-classifier ほか）と
 > `~/.isac/workflows/`（マルチエージェントWorkflow: `isac-review-agents` / `isac-review-issues` / `isac-review-dialectic` /
-> `isac-pr-review-issues`）が配布されます。`/isac-review --agents` や `/isac-pr-review --agents`、`--dialectic` から利用されます。
+> `isac-pr-review-issues` / `isac-pr-review-v2-issues`）が配布されます。`/isac-review --agents` や `/isac-pr-review --agents`、`--dialectic` から利用されます。
 
 ## 記憶の階層
 
@@ -291,7 +291,7 @@ isac/
 │   │   ├── save-memory.sh      # AI分類結果の記憶保存
 │   │   └── sensitive-filter.sh # 機密情報フィルター
 │   ├── skills/                 # Skill定義（isac-autopilot / isac-review / isac-code-review /
-│   │   │                       #   isac-pr-review / isac-memory / isac-decide / isac-suggest /
+│   │   │                       #   isac-pr-review / isac-pr-review-v2(実験) / isac-memory / isac-decide / isac-suggest /
 │   │   │                       #   isac-save-memory / isac-notion-design / isac-todo / isac-later）
 │   │   └── <skill-name>/SKILL.md
 │   ├── agents/                 # サブエージェント定義
@@ -302,7 +302,8 @@ isac/
 │       ├── isac-review-agents.js     # --agents（多レンズ投票）
 │       ├── isac-review-issues.js     # --agents レビュー版（issue-finding＋🔴検証）
 │       ├── isac-review-dialectic.js  # --dialectic（弁証法・意思決定）
-│       └── isac-pr-review-issues.js  # PRレビュー徹底版
+│       ├── isac-pr-review-issues.js  # PRレビュー徹底版
+│       └── isac-pr-review-v2-issues.js  # PRレビューv2（実験・/code-review を補う多レンズ）
 ├── docs/                       # 設計・ガイド
 │   ├── DESIGN_isac-review-agents.md
 │   ├── MEMORY_SERVICE.md

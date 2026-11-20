@@ -250,6 +250,7 @@ ISACのスキルは必ず `isac-` プレフィックスを付けること（他�
 | `/isac-review` | 設計レビュー（ペルソナ議論。`--agents` でブラインド並列エージェントによる同調バイアス低減モード） |
 | `/isac-code-review` | コードレビュー（4ペルソナ・スコアリング） |
 | `/isac-pr-review` | GitHub PRレビュー（4ペルソナ・PRコメント投稿。`--agents` で多レンズ並列＋🔴独立検証の徹底レビュー） |
+| `/isac-pr-review-v2` | **実験版** PRレビュー（`/isac-pr-review --agents` の改良候補。組み込みの `/code-review` でバグを探し、多レンズでそれが見ない領域＝リポジトリの決まり・PR説明との照合・経路間の整合・運用・テストを補う。実行して確かめる接地が既定。比較用に併存） |
 | `/isac-memory` | 記憶の検索・管理 |
 | `/isac-decide` | 決定の記録 |
 | `/isac-suggest` | 状況に応じたSkill提案（未完了タスクも表示） |
@@ -295,7 +296,7 @@ effort: high
 | effort | 対象スキル | 理由 |
 |--------|-----------|------|
 | `xhigh` | `/isac-autopilot` | 設計→実装→テスト→レビューの全工程を一括実行。最も深い推論が必要 |
-| `high` | `/isac-review`, `/isac-code-review`, `/isac-pr-review`, `/isac-notion-design` | 多ペルソナ議論・設計・懐疑的レビューの質が effort に効く |
+| `high` | `/isac-review`, `/isac-code-review`, `/isac-pr-review`, `/isac-pr-review-v2`, `/isac-notion-design` | 多ペルソナ議論・設計・懐疑的レビューの質が effort に効く |
 | `medium` | `/isac-save-memory`, `/isac-suggest` | 分類・提案の精度を確保しつつコストは抑える |
 | `low` | `/isac-todo`, `/isac-later`, `/isac-memory`, `/isac-decide` | API 呼び出し＋整形が主体。高 effort は不要 |
 
@@ -428,7 +429,7 @@ gh pr create --title "Add [hook-name] hook" --body "..."
 4. **Claude Code CLI ファースト**: CLI の機能を最大限活用
 5. **セキュリティ**: 機密情報は自動フィルタリング
 6. **CLAUDE.mdを必ずコンテキストに含める**: ルール、規約、決定事項が集約されている
-7. **懐疑的レビュアー必須**: ペルソナを使うスキル（`/isac-review`, `/isac-code-review`, `/isac-pr-review`, `/isac-autopilot`）では、ペルソナ数に関わらず最低1人は懐疑的レビュアーを含めること
+7. **懐疑的レビュアー必須**: ペルソナを使うスキル（`/isac-review`, `/isac-code-review`, `/isac-pr-review`, `/isac-pr-review-v2`, `/isac-autopilot`）では、ペルソナ数に関わらず最低1人は懐疑的レビュアーを含めること
 8. **correctness は実行で、設計判断はペルソナで**: 後述「レビューの限界と実行検証」を厳守すること
 9. **AI は推奨する、決定は人間が下す**: レビュー系スキル（`/isac-review` 等）の結論は *推奨* であって *チームの決定* ではない。AI の推奨を `type=decision` として自動保存しない（人間が決めていないものが「決定事項」として権威を持って想起されるのを防ぐ）。決定として残すのは人間が明示的に `/isac-decide` で確定した時のみ（＝記憶に "決定" として出るものは必ず人間が著者）。「AI による PR のマージ禁止」と同型の原則。詳細は [docs/DESIGN_isac-review-agents.md](docs/DESIGN_isac-review-agents.md) §11。
 
@@ -500,6 +501,9 @@ bash tests/run_all_tests.sh --quick
 
 # フルテスト
 bash tests/run_all_tests.sh
+
+# Workflow スクリプトのスタブ実走テストのみ（node 必要・LLM も Docker も不要）
+bash tests/run_all_tests.sh --workflows-only
 
 # カバレッジ計測付きテスト
 bash tests/run_all_tests.sh --coverage

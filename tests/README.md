@@ -116,6 +116,17 @@ pytest tests/test_memory_service.py -v
 | TestMemoryOperations | 個別メモリの取得・削除 |
 | TestImport | インポート |
 
+### Workflowテスト (`test_workflows.sh` → `workflow_*.test.mjs`)
+
+`.claude/workflows/*.js` の `agent()` / `parallel()` をスタブに差し替え、JS 部分を LLM なしで検証する。
+
+| テスト項目 | 内容 |
+|-----------|------|
+| 入力 | diff 欠落、JSON 文字列 args、model の既定/上書き、レンズ失敗 |
+| 信頼境界 | PR由来テキストの囲いと偽装タグの無害化、実行ポリシーの切り替え |
+| 重複排除 | 近接行の境界値（差3/差4）、別ファイル、行不明 |
+| 検証 | 検証者に渡す情報、🔴の fail-closed、🟡のバッチ化と fail-open |
+
 ## オプション
 
 ```bash
@@ -128,6 +139,7 @@ bash tests/run_all_tests.sh --help
 --hooks-only   # Hookテストのみ
 --integration  # 統合テストのみ
 --todo-only    # Todoテストのみ
+--workflows-only  # Workflowスタブ実走テストのみ（node必要。無ければ SKIPPED と表示。Docker は起動しない）
 --coverage     # カバレッジ計測（HTMLレポート生成）
 ```
 
