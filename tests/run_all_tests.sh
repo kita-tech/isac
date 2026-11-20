@@ -32,6 +32,7 @@ RUN_HOOKS=true
 RUN_INTEGRATION=true
 RUN_TODO=true
 RUN_CLI=true
+RUN_WORKFLOWS=true
 RUN_COVERAGE=false
 
 for arg in "$@"; do
@@ -41,30 +42,42 @@ for arg in "$@"; do
             RUN_INTEGRATION=false
             RUN_TODO=false
             RUN_CLI=false
+            RUN_WORKFLOWS=false
             ;;
         --hooks-only)
             RUN_API=false
             RUN_INTEGRATION=false
             RUN_TODO=false
             RUN_CLI=false
+            RUN_WORKFLOWS=false
             ;;
         --integration)
             RUN_API=false
             RUN_HOOKS=false
             RUN_TODO=false
             RUN_CLI=false
+            RUN_WORKFLOWS=false
             ;;
         --todo-only)
             RUN_API=false
             RUN_HOOKS=false
             RUN_INTEGRATION=false
             RUN_CLI=false
+            RUN_WORKFLOWS=false
             ;;
         --cli-only)
             RUN_API=false
             RUN_HOOKS=false
             RUN_INTEGRATION=false
             RUN_TODO=false
+            RUN_WORKFLOWS=false
+            ;;
+        --workflows-only)
+            RUN_API=false
+            RUN_HOOKS=false
+            RUN_INTEGRATION=false
+            RUN_TODO=false
+            RUN_CLI=false
             ;;
         --quick)
             RUN_API=false
@@ -81,13 +94,45 @@ for arg in "$@"; do
             echo "  --integration   統合テストのみ実行"
             echo "  --todo-only     Todoテストのみ実行"
             echo "  --cli-only      CLIテストのみ実行"
-            echo "  --quick         Hookテストと統合テストとTodoテストとCLIテストのみ (pytest不要)"
+            echo "  --workflows-only Workflowテストのみ実行 (node必要。無ければスキップ)"
+            echo "  --quick         Hookテストと統合テストとTodoテストとCLIテストとWorkflowテストのみ (pytest不要)"
             echo "  --coverage      カバレッジ計測を有効化 (HTMLレポート生成)"
             echo ""
             exit 0
             ;;
     esac
 done
+
+# Workflow テストを1回走らせて結果を RESULTS に積む（node が無ければ SKIPPED。PASSED と表示しない）
+run_workflow_tests() {
+    echo "========================================"
+    echo -e "${BLUE}Workflowテスト${NC}"
+    echo "========================================"
+    echo ""
+    local rc=0
+    bash "$SCRIPT_DIR/test_workflows.sh" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        RESULTS+=("Workflow Tests: ${GREEN}PASSED${NC}")
+    elif [ "$rc" -eq 77 ]; then
+        RESULTS+=("Workflow Tests: ${YELLOW}SKIPPED (node が無い)${NC}")
+    else
+        RESULTS+=("Workflow Tests: ${RED}FAILED${NC}")
+        EXIT_CODE=1
+    fi
+    echo ""
+}
+
+# Workflow テストだけを走らせる場合は Memory Service（Docker）が要らないので、起動せずに実行して終わる
+if [ "$RUN_WORKFLOWS" = true ] && [ "$RUN_API" = false ] && [ "$RUN_HOOKS" = false ] && \
+   [ "$RUN_INTEGRATION" = false ] && [ "$RUN_TODO" = false ] && [ "$RUN_CLI" = false ]; then
+    RESULTS=()
+    EXIT_CODE=0
+    run_workflow_tests
+    for result in "${RESULTS[@]}"; do
+        echo -e "  $result"
+    done
+    exit $EXIT_CODE
+fi
 
 echo "========================================"
 echo -e "${BLUE}ISAC テストスイート${NC}"
@@ -282,6 +327,13 @@ if [ "$RUN_CLI" = true ]; then
         EXIT_CODE=1
     fi
     echo ""
+fi
+
+# ========================================
+# Workflowテスト（スタブ実走・LLM不要）
+# ========================================
+if [ "$RUN_WORKFLOWS" = true ]; then
+    run_workflow_tests
 fi
 
 # ========================================
