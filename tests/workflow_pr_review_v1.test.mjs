@@ -106,6 +106,32 @@ await test('全レンズ成功・指摘0件は error にしない（failed_lense
   assert.equal(result.total_findings, 0)
 })
 
+// ---------- 作業場所（カレントブランチを汚さない） ----------
+await test('作業場所: worktree があれば絶対パスで読み git -C を使う指示が Review と Verify の両方に入る', async () => {
+  const wt = '/tmp/isac-pr-review-7'
+  const h = (p, o) => (o.label.startsWith('REV:') ? { findings: o.label === 'REV:セキュリティ' ? [HIGH] : [] } : { verdict: 'confirmed', reasoning: 'r' })
+  const { calls } = await run({ ...BASE, worktree_path: wt }, h)
+  const review = calls.find((c) => c.opts.label.startsWith('REV:'))
+  const verify = calls.find((c) => c.opts.label.startsWith('VERIFY'))
+  assert.ok(verify, '検証エージェントが起動している')
+  for (const c of [review, verify]) {
+    assert.match(c.prompt, /【作業場所（厳守）】/)
+    assert.ok(c.prompt.includes(`${wt}/...`), '絶対パスで読む指示')
+    assert.ok(c.prompt.includes(`git -C ${wt}`), 'git -C の指示')
+    assert.match(c.prompt, /起動時のカレントディレクトリは、レビューしている人の作業中のリポジトリ/)
+  }
+})
+await test('禁止事項: 作業中のブランチを変える操作は worktree の有無に関係なく禁止', async () => {
+  for (const extra of [{ worktree_path: '/tmp/wt' }, {}]) {
+    const { calls } = await run({ ...BASE, ...extra }, EMPTY)
+    assert.match(calls[0].prompt, /commit\/push\/checkout\/switch\/stash\/reset\/clean\/merge\/rebase/)
+    assert.match(calls[0].prompt, /gh pr checkout を含む/)
+  }
+  const { calls } = await run(BASE, EMPTY)   // worktree 無しなら作業場所の指示は出さない
+  assert.doesNotMatch(calls[0].prompt, /【作業場所（厳守）】/)
+  assert.match(calls[0].prompt, /worktree 未提供/)
+})
+
 // ---------- 既存挙動の回帰 ----------
 await test('diff が無ければ error を返し agent を呼ばない', async () => {
   const { result, calls } = await run({}, EMPTY)
