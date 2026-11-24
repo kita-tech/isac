@@ -44,9 +44,17 @@ if (!DIFF) {
   return { error: 'diff が必須（gh pr diff <PR> の出力を渡すこと）' }
 }
 
+// 作業中のブランチを変える操作は worktree の有無に関係なく禁止する
+const FORBID = `\n【禁止】リポジトリのファイルの変更・削除、git の commit/push/checkout/switch/stash/reset/clean/merge/rebase、gh による投稿・変更（gh pr checkout を含む）。`
+// 作業場所: PR のコードは worktree にだけある。エージェントの起動時のカレントディレクトリは、レビューしている人の
+// 作業中のブランチ（PR のコードではない）なので、相対パスで読むと別のコードを読み、コマンドを動かすと作業中のブランチを汚す。
 const GROUND = WORKTREE
-  ? `\n【周辺コード参照】PR ブランチが ${WORKTREE} に checkout 済み。diff だけで判断せず、必要なら worktree 内のファイルを実際に読み、runnable なら構文チェック/実行して接地せよ。`
-  : `\n【注意】worktree 未提供。diff の範囲でのみ判断し、diff 外への断定は避けること。`
+  ? `\n【周辺コード参照】PR ブランチが ${WORKTREE} に checkout 済み。diff だけで判断せず、必要なら worktree 内のファイルを実際に読み、runnable なら構文チェック/実行して接地せよ。` +
+    `\n【作業場所（厳守）】PR のコードは ${WORKTREE} にだけある。ファイルは必ずこの worktree の絶対パス（${WORKTREE}/...）で読み、` +
+    `シェルのコマンドは cd ${WORKTREE} してから、git は git -C ${WORKTREE} で実行すること。` +
+    `起動時のカレントディレクトリは、レビューしている人の作業中のリポジトリで、PR のコードではない。そこにあるファイルを読まない・変更しない・そこでコマンドを動かさない。` +
+    FORBID
+  : `\n【注意】worktree 未提供。diff の範囲でのみ判断し、diff 外への断定は避けること。` + FORBID
 
 const TARGET = `【レビュー対象: PR${PR_NUMBER ? ' #' + PR_NUMBER : ''} の差分】\n${DIFF}${GROUND}`
 

@@ -24,6 +24,9 @@ GitHub PRを4人のペルソナ + PR固有のチェックでレビューし、�
 - `gh` CLI がインストールされていること
 - GitHub に認証済みであること（`gh auth status` で確認）
 - `git` が利用可能であること（worktree の作成に必要）
+- **カレントブランチ（レビューする人の作業中のブランチ）は汚さない。** PR のコードは手順1.5の worktree にだけ取り出し、作業中のディレクトリを
+  PR のブランチに切り替えない（`gh pr checkout` / `git switch` / `git checkout` / `git stash` などを使わない）。PR のコードを読む・動かすのは
+  すべて worktree の中で行い、手順7で作業中のリポジトリが変わっていないことを確かめる
 
 ## 実行手順
 
@@ -54,14 +57,25 @@ PRブランチを git worktree でチェックアウトし、コード全体を�
 差分の正確性を担保するため、`gh pr diff` による差分取得は GitHub API から行う。worktree は周辺コンテキストの参照用。
 
 ```bash
-# 1. PRブランチを取得
+# 0. 作業中のリポジトリの状態（ブランチ・HEAD・未コミットの変更）を記録する（手順7で変わっていないか比べるため）
+{ git branch --show-current; git rev-parse HEAD; git status --porcelain; } > /tmp/isac-pr-review-<PR番号>-repo-before.txt
+
+# 1. 前回のレビューの残り（同じ番号の worktree・ブランチ）があれば片付けてから、PRブランチを取得
+#    （git fetch は pr-review-<PR番号> という参照を作るだけで、作業中のブランチやファイルには触れない）
+git worktree remove /tmp/isac-pr-review-<PR番号> --force 2>/dev/null; git branch -D pr-review-<PR番号> 2>/dev/null
 git fetch origin pull/<PR番号>/head:pr-review-<PR番号>
 
 # 2. worktree を作成（/tmp 配下に一時ディレクトリ）
 git worktree add /tmp/isac-pr-review-<PR番号> pr-review-<PR番号>
 ```
 
-worktree の作成に失敗した場合は、worktree なしで `gh pr diff` の差分のみでレビューを続行する。
+worktree の作成に失敗した場合は、worktree なしで `gh pr diff` の差分のみでレビューを続行する。このときも作業中のディレクトリを
+PR のブランチに切り替えない。
+
+**PR のコードは worktree の中だけで読む・動かす。** このスキルを動かしているセッションのカレントディレクトリは、レビューする人の
+作業中のブランチで、PR のコードではない。周辺のコードを読むときは worktree の絶対パス（`/tmp/isac-pr-review-<PR番号>/...`）で読み、
+git は `git -C /tmp/isac-pr-review-<PR番号>`、コマンドを動かすときは `cd /tmp/isac-pr-review-<PR番号> && ...` で実行する
+（相対パスで読むと、作業中のブランチのコードを PR のコードと取り違える）。
 
 ### 2. 評価観点と重み付け
 
@@ -131,7 +145,7 @@ worktree の作成に失敗した場合は、worktree なしで `gh pr diff` の
 >
 > **同一モデルの限界と実行検証**: 4ペルソナは全員同じモデルで盲点が相関するため、合意は事実の正しさを保証しない。
 > ツール/コマンド/ランタイム挙動の断定は実行で確認すること。worktree（手順1.5）が作成できている場合は、
-> 指摘対象のコード/コマンドを実際に動かして（`bash -n`／最小ケース実行／`docker` で環境依存挙動）検証する。
+> 指摘対象のコード/コマンドを **worktree の中で** 実際に動かして（`bash -n`／最小ケース実行／`docker` で環境依存挙動）検証する。
 > 検証した指摘は ✅検証済、未検証の事実主張は ⚠️未検証 とラベルし、未検証を「確定」として投稿しない。
 
 ### 5. 出力フォーマット（PRコメント用・日本語/英語セクション分離）
@@ -309,6 +323,18 @@ EOF
 git worktree remove /tmp/isac-pr-review-<PR番号> --force
 git branch -D pr-review-<PR番号>
 ```
+
+最後に、作業中のリポジトリがレビューの前後で変わっていないかを確かめる（手順1.5で記録した状態と比べる）。
+
+```bash
+{ git branch --show-current; git rev-parse HEAD; git status --porcelain; } > /tmp/isac-pr-review-<PR番号>-repo-after.txt
+diff /tmp/isac-pr-review-<PR番号>-repo-before.txt /tmp/isac-pr-review-<PR番号>-repo-after.txt \
+  && echo "作業中のリポジトリは変わっていない"
+rm -f /tmp/isac-pr-review-<PR番号>-repo-before.txt /tmp/isac-pr-review-<PR番号>-repo-after.txt
+```
+
+差分が出たら、**元に戻そうとせず**、変わった内容（ブランチ・HEAD・ファイル）をそのままユーザーに伝える
+（レビュー中にユーザー自身が作業した変更かもしれないため。勝手に reset / checkout しない）。
 
 ## 重要度の定義
 
