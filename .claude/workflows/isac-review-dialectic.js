@@ -91,9 +91,16 @@ if (advocates.length < 2) {
   }
 }
 
+// 生存した選択肢のみを以降の対象にする。
+// 重要: 擁護に失敗した選択肢を OPTIONS のまま残すと、steelman されていない（＝最強ケース空）の案を
+// ジャッジが推奨候補にできてしまい、本 workflow の中核保証「負ける案が必ず最強の論拠で残る」が破れる。
+const SURVIVED = advocates.map((a) => a.option)
+const DROPPED = OPTIONS.filter((o) => !SURVIVED.includes(o))
+
 // ===== Phase2 相互反駁（red team / blue team）=====
 phase('Rebut')
-const rebuttals = (await parallel(OPTIONS.map((opt) => () => {
+// SURVIVED のみを反復（OPTIONS だと擁護に失敗した案にも反駁者を立ててしまい own が空になる）
+const rebuttals = (await parallel(SURVIVED.map((opt) => () => {
   const own = advocates.find((a) => a.option === opt)
   const others = advocates.filter((a) => a.option !== opt)
     .map((a) => `【${a.option} の主張】${a.strongest_case}\n 証拠: ${(a.key_evidence || []).join('; ')}`).join('\n\n')
@@ -107,25 +114,36 @@ const rebuttals = (await parallel(OPTIONS.map((opt) => () => {
 
 // ===== Phase3 独立ジャッジ（擁護に不参加の別体）=====
 phase('Judge')
-const dossier = OPTIONS.map((opt) => {
+// dossier も SURVIVED のみ。落ちた案は steelman が無いので比較対象にしない。
+const dossier = SURVIVED.map((opt) => {
   const a = advocates.find((x) => x.option === opt) || {}
   const r = rebuttals.find((x) => x.option === opt) || {}
   return `=== ${opt} ===\n最強ケース: ${a.strongest_case || ''}\n証拠: ${(a.key_evidence || []).join('; ')}\n` +
     `先回り封じ: ${(a.preempted_objections || []).join('; ')}\n反駁(他案へ): ${(r.rebuttals_of_others || []).join('; ')}\n自案防御: ${(r.defenses || []).join('; ')}`
 }).join('\n\n')
 
+// recommendation の enum は SURVIVED に絞る（擁護不在の案を推奨できないようにする）
+const judgeSchema = {
+  ...JUDGE_SCHEMA,
+  properties: { ...JUDGE_SCHEMA.properties, recommendation: { type: 'string', enum: SURVIVED } },
+}
+const droppedNote = DROPPED.length
+  ? `\n\n【注】次の選択肢は擁護(steelman)を得られず比較から除外された: ${DROPPED.join(', ')}。これらは推奨できない。`
+  : ''
+
 const judge = await agent(
-  `${COMMON}\n\nあなたは中立の独立ジャッジで、どの選択肢も擁護していない。以下は各案の擁護者による最強ケースと相互反駁。\n\n${dossier}\n\n` +
-  `両サイドを公平に weigh し、recommendation(選択肢から1つ)、confidence、決め手(decisive_factors)、` +
+  `${COMMON}\n\nあなたは中立の独立ジャッジで、どの選択肢も擁護していない。以下は各案の擁護者による最強ケースと相互反駁。\n\n${dossier}${droppedNote}\n\n` +
+  `両サイドを公平に weigh し、recommendation(擁護のあった選択肢から1つ)、confidence、決め手(decisive_factors)、` +
   `推奨案に残るリスク(residual_risks)、そして『負ける案に残る正当な論拠(losing_option_standing)』を出せ。` +
   `多数決ではなく論拠の強さで判断し、接地していない主張は割り引くこと。`,
-  { label: 'JUDGE', phase: 'Judge', schema: JUDGE_SCHEMA }
+  { label: 'JUDGE', phase: 'Judge', schema: judgeSchema }
 )
 
 return {
   topic: TOPIC,
   mode: 'dialectic',
   options: OPTIONS,
+  dropped_options: DROPPED,   // 擁護に失敗し比較から除外された選択肢（部分失敗の可視化）
   advocates: advocates.map((a) => ({ option: a.option, strongest_case: a.strongest_case, key_evidence: a.key_evidence, preempted_objections: a.preempted_objections })),
   rebuttals: rebuttals.map((r) => ({ option: r.option, rebuttals_of_others: r.rebuttals_of_others, defenses: r.defenses })),
   judge,

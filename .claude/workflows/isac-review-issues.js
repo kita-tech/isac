@@ -15,6 +15,7 @@ export const meta = {
   description: 'レビュー(issue-finding)モード: 多レンズで対象の問題を網羅列挙→重大度別に集約。決定でなくレビュー用',
   phases: [
     { title: 'Review', detail: '多レンズ並列で issue を接地列挙' },
+    { title: 'Verify', detail: '🔴High指摘を独立反証者で偽陽性チェック' },
     { title: 'Aggregate', detail: 'JSで重大度別に集約' },
   ],
 }
@@ -63,7 +64,7 @@ const SCHEMA = {
 
 // ===== Review（多レンズ並列・投票なし）=====
 phase('Review')
-const reviews = (await parallel(LENSES.map((L) => () =>
+const reviewResults = await parallel(LENSES.map((L) => () =>
   agent(
     `${TARGET}\n${CONTEXT ? '【文脈】' + CONTEXT + '\n' : ''}\n` +
     `あなたは【${L.label}】レンズのレビュアー。観点: ${L.focus}\n` +
@@ -71,14 +72,59 @@ const reviews = (await parallel(LENSES.map((L) => () =>
     `runnable なら実際に読んで/走らせて確認し、接地しない断定はしない。問題が無ければ findings は空配列。`,
     { label: `REV:${L.label}`, phase: 'Review', schema: SCHEMA }
   ).then((r) => (r ? { ...r, lens: L.label } : null))   // 失敗(null)は保持・lensはコード側を勝たせる
-))).filter(Boolean)
+))
+const failedLenses = LENSES.filter((L, i) => !reviewResults[i]).map((L) => L.label)
+const reviews = reviewResults.filter(Boolean)
+// 全レンズ失敗を「指摘0件」と取り違えないよう、明示的にエラーで返す（fail-closed）
+if (reviews.length === 0) {
+  return {
+    error: `全レンズ（${LENSES.length}体）が失敗し、レビューできなかった（指摘0件ではない）。利用上限や一時的な障害の可能性がある。時間をおいて再実行すること`,
+    failed_lenses: failedLenses,
+  }
+}
 
-// ===== 集約（JS・重大度別。投票なし）=====
-phase('Aggregate')
 const all = []
 for (const r of reviews) for (const f of (r.findings || [])) all.push({ lens: r.lens, ...f })
+
+// ===== Verify（🔴High のみ独立反証者で偽陽性チェック。severity インフレ対策）=====
+// 公開・不可逆な出力(PRコメント等)で🔴を確定する前のゲート。high 以外はコスト対効果が低いので対象外。
+// 反証者は「迷ったら偽陽性/降格に倒す」。検証失敗(null)は安全側=unverified(🔴に昇格させない)。
+phase('Verify')
+const VERIFY_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['verdict', 'reasoning'],
+  properties: {
+    verdict: { type: 'string', enum: ['confirmed', 'downgrade', 'false_positive'] },
+    adjusted_severity: { type: 'string', enum: ['med', 'low'] }, // downgrade 時の落とし先
+    reasoning: { type: 'string' },
+  },
+}
+const rawHigh = all.filter((f) => f.severity === 'high')
+const verified = rawHigh.length === 0 ? [] : (await parallel(rawHigh.map((f, i) => () =>
+  agent(
+    `${TARGET}\n${CONTEXT ? '【文脈】' + CONTEXT + '\n' : ''}\n` +
+    `あなたは独立した検証者(skeptic)で、この指摘を出したレビュアーとは別人。以下の🔴High指摘が本当に High 相当か、偽陽性・過大評価でないかを反証せよ。\n` +
+    `【指摘(${f.lens}レンズ)】area: ${f.area}\nissue: ${f.issue}\nevidence: ${f.evidence}\nsuggested_fix: ${f.suggested_fix}\n\n` +
+    `対象を実際に読んで/走らせて接地して判断せよ。verdict は confirmed(接地でき真に High) / downgrade(実在するが過大→adjusted_severity で med/low) / false_positive(誤り・的外れ)。` +
+    `迷ったら confirmed にせず downgrade か false_positive に倒すこと（公開前ゲートなので偽陽性を通さない側に倒す）。`,
+    { label: `VERIFY:${f.area}#${i}`, phase: 'Verify', schema: VERIFY_SCHEMA }
+  ).then((v) => (v
+    ? { ...f, verdict: v.verdict, adjusted_severity: v.adjusted_severity, verify_reasoning: v.reasoning }
+    : { ...f, verdict: 'unverified', verify_reasoning: '検証エージェント失敗のため安全側で未確定扱い' }))
+)))
+
+// ===== 集約（JS・重大度別。投票なし。high は検証を通ったものだけ）=====
+phase('Aggregate')
 const bySev = { high: [], med: [], low: [] }
-for (const f of all) (bySev[f.severity] || bySev.low).push(f)
+// high 以外はそのまま集約
+for (const f of all) if (f.severity !== 'high') bySev[f.severity].push(f)
+// high は検証結果で再分類
+const filteredOut = []   // 偽陽性・未確定（🔴から除外され公開しない）
+for (const v of verified) {
+  if (v.verdict === 'confirmed') bySev.high.push(v)
+  else if (v.verdict === 'downgrade') bySev[v.adjusted_severity || 'med'].push({ ...v, downgraded_from: 'high' })
+  else filteredOut.push(v)   // false_positive / unverified
+}
 // area 別のヒット・レンズ数（複数レンズが同 area を挙げたら注目度高）
 const areaCount = {}
 for (const f of all) areaCount[f.area] = (areaCount[f.area] || 0) + 1
@@ -87,11 +133,23 @@ return {
   mode: 'review(issue-finding)',
   target: ARTIFACT_PATH || '(inline artifact)',
   lenses: LENSES.map((l) => l.label),
+  failed_lenses: failedLenses,   // 失敗して未レビューのレンズ（空でなければレポートに明記する）
   total_findings: all.length,
   counts: { high: bySev.high.length, med: bySev.med.length, low: bySev.low.length },
   high: bySev.high,
   med: bySev.med,
   low: bySev.low,
+  // severity インフレの可視化: レビュアーが付けた raw High と、検証を通った confirmed High の差
+  verification: {
+    raw_high: rawHigh.length,
+    confirmed_high: bySev.high.length,
+    downgraded: verified.filter((v) => v.verdict === 'downgrade').length,
+    filtered_out: filteredOut.length,
+    // 検証エージェントの失敗で🔴に載らなかった件数（偽陽性とは別）。0 より大きいとき「🔴0件」は「🔴なし」ではない
+    verify_failed: filteredOut.filter((v) => v.verdict === 'unverified').length,
+    false_positive: filteredOut.filter((v) => v.verdict === 'false_positive').length,
+    filtered_out_detail: filteredOut.map((v) => ({ area: v.area, lens: v.lens, verdict: v.verdict, reason: v.verify_reasoning })),
+  },
   multi_lens_areas: Object.entries(areaCount).filter(([, n]) => n >= 2).map(([a, n]) => ({ area: a, lenses: n })),
-  governance_note: 'レビュー結果は指摘であり決定ではない。対応要否は人間が判断する。',
+  governance_note: 'レビュー結果は指摘であり決定ではない。対応要否は人間が判断する。🔴High は独立反証者の検証を通ったもののみ。',
 }

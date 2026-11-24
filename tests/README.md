@@ -135,6 +135,7 @@ pytest tests/test_memory_service.py -v
 | 信頼境界 | PR由来テキストの囲いと偽装タグの無害化、実行ポリシーの切り替え |
 | 重複排除 | 近接行の境界値（差3/差4）、別ファイル、行不明 |
 | 検証 | 検証者に渡す情報、🔴の fail-closed、🟡のバッチ化と fail-open |
+| 部分失敗（`workflow_review.test.mjs`） | isac-review の issues / dialectic / agents で一部・全部のエージェントが失敗したときの扱い（全失敗は error、擁護失敗の選択肢を推奨させない、Round2 の役割ずれ防止） |
 
 ## オプション
 
