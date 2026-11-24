@@ -23,7 +23,7 @@
 
 export const meta = {
   name: 'isac-pr-review-issues',
-  description: 'PRレビュー徹底版: PR diff を多レンズで issue-finding→🔴を独立反証者で検証→file/重大度別に集約',
+  description: '【内部用・直接呼ばない】/isac-pr-review --agents から呼ばれる部品。PR取得・レポート整形・投稿は行わない。PRレビューは /isac-pr-review --agents を使うこと。中身: PR diff を多レンズで issue-finding→🔴を独立反証者で検証→集約(JSON)',
   phases: [
     { title: 'Review', detail: '多レンズ並列で PR diff の issue を接地列挙' },
     { title: 'Verify', detail: '🔴High指摘を独立反証者で偽陽性チェック（公開前ゲート）' },

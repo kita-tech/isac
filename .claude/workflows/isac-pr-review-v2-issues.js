@@ -38,7 +38,7 @@
 
 export const meta = {
   name: 'isac-pr-review-v2-issues',
-  description: 'PRレビューv2(実験): /code-review が見ない領域(決まり・意図・経路間の整合・運用・テスト)を多レンズで補完→重複排除→独立検証→集約',
+  description: '【内部用・直接呼ばない】/isac-pr-review-v2 の手順5で呼ばれる部品。PR取得・/code-review・レポート整形は行わない。PRレビューは /isac-pr-review-v2 を使うこと。中身: /code-review が見ない領域を多レンズで補完→重複排除→独立検証→集約(JSON)',
   phases: [
     { title: 'Review', detail: '多レンズ並列で PR diff の issue を接地列挙（PR由来テキストはデータ扱い）' },
     { title: 'Verify', detail: '重複排除後、🔴は個別・🟡はバッチで独立検証（根拠は検証者が再導出）' },

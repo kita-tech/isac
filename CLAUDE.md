@@ -119,7 +119,7 @@ isac/
 │   │   └── sensitive-filter.sh  # 機密情報フィルター
 │   ├── skills/            # Skill 定義
 │   ├── agents/            # サブエージェント定義
-│   └── workflows/         # マルチエージェント Workflow スクリプト（例: isac-review-agents.js）
+│   └── workflows/         # マルチエージェント Workflow スクリプト（スキルから呼ばれる部品。例: isac-review-issues.js）
 ├── memory-service/        # Memory Service (Docker)
 ├── templates/             # プロジェクトテンプレート
 ├── tests/                 # テストスイート
@@ -260,6 +260,12 @@ ISACのスキルは必ず `isac-` プレフィックスを付けること（他�
 | `/isac-later` | 「後でやる」タスクを素早く記録 |
 
 **注意**: `/isac-todo` の owner ルールは `.claude/skills/isac-todo/SKILL.md` の「注意事項」を参照。チーム共有タスクは Todo ではなく `/isac-decide` または GitHub Issues を使用すること。
+
+### Workflow はスキルの部品（直接呼ばない）
+
+`.claude/workflows/*.js` はスキル（例 `/isac-pr-review-v2`）の手順の途中で呼ばれる部品で、PR の取得やレポート整形は行わない。
+Claude Code は Workflow もスキル一覧に名前で並べるため、単独で使えるように見えやすい。
+そのため `meta.description` の先頭に **`【内部用・直接呼ばない】`** と書き、どのスキルから呼ばれるか・ユーザーが代わりに使うスキルを明記すること（新しい Workflow を追加するときも同様）。
 
 ### Skills ファイル構造
 

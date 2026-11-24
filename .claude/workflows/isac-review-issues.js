@@ -12,7 +12,7 @@
 
 export const meta = {
   name: 'isac-review-issues',
-  description: 'レビュー(issue-finding)モード: 多レンズで対象の問題を網羅列挙→重大度別に集約。決定でなくレビュー用',
+  description: '【内部用・直接呼ばない】/isac-review --agents から呼ばれる部品。レビューは /isac-review --agents を使うこと。中身: 多レンズで対象の問題を網羅列挙→🔴を独立反証者で検証→重大度別に集約(JSON)',
   phases: [
     { title: 'Review', detail: '多レンズ並列で issue を接地列挙' },
     { title: 'Verify', detail: '🔴High指摘を独立反証者で偽陽性チェック' },

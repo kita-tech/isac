@@ -22,7 +22,7 @@
 
 export const meta = {
   name: 'isac-review-agents',
-  description: 'isac-review --agents: ブラインド並列レビュー→構造化相互反論(再spawn)→JS機械集計。出力は推奨(decisionではない)',
+  description: '【内部用・旧方式】旧・投票式 /isac-review --agents の部品（現在は /isac-review --dialectic / --agents を使う）。中身: ブラインド並列レビュー→構造化相互反論→JS機械集計(JSON)',
   phases: [
     { title: 'Round1', detail: 'N体ブラインド並列レビュー(schema検証)' },
     { title: 'Round2', detail: '他体の匿名意見を注入し再spawnで再評価' },
