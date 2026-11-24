@@ -20,6 +20,31 @@ FAILED=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ISAC_CMD="$SCRIPT_DIR/bin/isac"
 
+# ========================================
+# 実環境の隔離（一時 HOME）
+# ========================================
+# isac install / update / init は ~/.isac・~/.claude（CLAUDE.md・settings.json・statusline）・
+# ~/.claude.json（MCP 登録）に書き込む。実 HOME のまま流すと、テストしているブランチの内容が
+# 自分の環境に配られてしまうため、テスト全体を一時 HOME で実行する。
+REAL_HOME="$HOME"
+TEST_HOME=$(mktemp -d)
+export HOME="$TEST_HOME"
+unset ISAC_GLOBAL_DIR
+# 一時 HOME には ~/.gitconfig が無いので、テスト内の git commit 用に作者情報を与える
+export GIT_AUTHOR_NAME="isac-test" GIT_AUTHOR_EMAIL="isac-test@example.invalid"
+export GIT_COMMITTER_NAME="isac-test" GIT_COMMITTER_EMAIL="isac-test@example.invalid"
+# 実 HOME の ISAC 配布物がテスト中に変更されないことを最後に確かめるための目印
+REAL_HOME_MARKER="$TEST_HOME/.real-home-marker"
+touch "$REAL_HOME_MARKER"
+cleanup_test_home() { rm -rf "$TEST_HOME"; }
+trap cleanup_test_home EXIT
+
+# 一時 HOME に ISAC をインストールしておく（init がリンクする ~/.isac を用意する）
+if ! "$ISAC_CMD" install >/dev/null 2>&1; then
+    echo "SETUP FAILED: 一時 HOME への isac install に失敗しました"
+    exit 1
+fi
+
 # テスト関数
 test_pass() {
     echo -e "${GREEN}✓ PASS${NC}: $1"
@@ -1196,6 +1221,37 @@ echo ""
 # クリーンアップ
 # ========================================
 rm -f "$_LOAD_SECRETS_FUNC_FILE" 2>/dev/null
+
+# ========================================
+# テスト20: 実 HOME の隔離確認
+# ========================================
+echo -e "${BLUE}テスト20: 実 HOME の隔離確認${NC}"
+echo "----------------------------------------"
+
+# 20-1. テストは一時 HOME で動いていた
+if [ "$HOME" = "$TEST_HOME" ] && [ "$HOME" != "$REAL_HOME" ] && [ -d "$TEST_HOME/.isac/skills" ]; then
+    test_pass "CLI テストは一時 HOME で実行され、そこに ISAC がインストールされた"
+else
+    test_fail "一時 HOME" "HOME=$HOME"
+fi
+
+# 20-2. 実 HOME の ISAC 配布物がテスト中に変更されていない
+#       （ログ・バージョンキャッシュなど、実行中のセッションが書きうるものは対象外）
+CHANGED=""
+for p in "$REAL_HOME/.isac/skills" "$REAL_HOME/.isac/workflows" "$REAL_HOME/.isac/hooks" "$REAL_HOME/.isac/agents" \
+         "$REAL_HOME/.claude/CLAUDE.md" "$REAL_HOME/.claude/statusline-command.sh"; do
+    [ -e "$p" ] || continue
+    if [ -n "$(find "$p" -newer "$REAL_HOME_MARKER" -print -quit 2>/dev/null)" ]; then
+        CHANGED="$CHANGED $p"
+    fi
+done
+if [ -z "$CHANGED" ]; then
+    test_pass "実 HOME の ~/.isac と ~/.claude の配布物はテストで変更されない"
+else
+    test_fail "実 HOME の隔離" "変更された:$CHANGED"
+fi
+
+echo ""
 
 # ========================================
 # 結果サマリー
