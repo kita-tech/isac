@@ -64,7 +64,7 @@ const SCHEMA = {
 
 // ===== Review（多レンズ並列・投票なし）=====
 phase('Review')
-const reviews = (await parallel(LENSES.map((L) => () =>
+const reviewResults = await parallel(LENSES.map((L) => () =>
   agent(
     `${TARGET}\n${CONTEXT ? '【文脈】' + CONTEXT + '\n' : ''}\n` +
     `あなたは【${L.label}】レンズのレビュアー。観点: ${L.focus}\n` +
@@ -72,7 +72,16 @@ const reviews = (await parallel(LENSES.map((L) => () =>
     `runnable なら実際に読んで/走らせて確認し、接地しない断定はしない。問題が無ければ findings は空配列。`,
     { label: `REV:${L.label}`, phase: 'Review', schema: SCHEMA }
   ).then((r) => (r ? { ...r, lens: L.label } : null))   // 失敗(null)は保持・lensはコード側を勝たせる
-))).filter(Boolean)
+))
+const failedLenses = LENSES.filter((L, i) => !reviewResults[i]).map((L) => L.label)
+const reviews = reviewResults.filter(Boolean)
+// 全レンズ失敗を「指摘0件」と取り違えないよう、明示的にエラーで返す（fail-closed）
+if (reviews.length === 0) {
+  return {
+    error: `全レンズ（${LENSES.length}体）が失敗し、レビューできなかった（指摘0件ではない）。利用上限や一時的な障害の可能性がある。時間をおいて再実行すること`,
+    failed_lenses: failedLenses,
+  }
+}
 
 const all = []
 for (const r of reviews) for (const f of (r.findings || [])) all.push({ lens: r.lens, ...f })
@@ -124,6 +133,7 @@ return {
   mode: 'review(issue-finding)',
   target: ARTIFACT_PATH || '(inline artifact)',
   lenses: LENSES.map((l) => l.label),
+  failed_lenses: failedLenses,   // 失敗して未レビューのレンズ（空でなければレポートに明記する）
   total_findings: all.length,
   counts: { high: bySev.high.length, med: bySev.med.length, low: bySev.low.length },
   high: bySev.high,
@@ -135,6 +145,9 @@ return {
     confirmed_high: bySev.high.length,
     downgraded: verified.filter((v) => v.verdict === 'downgrade').length,
     filtered_out: filteredOut.length,
+    // 検証エージェントの失敗で🔴に載らなかった件数（偽陽性とは別）。0 より大きいとき「🔴0件」は「🔴なし」ではない
+    verify_failed: filteredOut.filter((v) => v.verdict === 'unverified').length,
+    false_positive: filteredOut.filter((v) => v.verdict === 'false_positive').length,
     filtered_out_detail: filteredOut.map((v) => ({ area: v.area, lens: v.lens, verdict: v.verdict, reason: v.verify_reasoning })),
   },
   multi_lens_areas: Object.entries(areaCount).filter(([, n]) => n >= 2).map(([a, n]) => ({ area: a, lenses: n })),

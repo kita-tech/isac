@@ -109,6 +109,15 @@ const round1 = await parallel(ROLES.map((role) => () =>
   ).then((r) => (r ? { role: role.label, ...r } : null))   // 失敗(null)は保持（{role}のtruthy化でfilterをすり抜けさせない）
 ))
 const r1 = round1.filter(Boolean)
+const failedRoles = ROLES.filter((role, i) => !round1[i]).map((role) => role.label)
+// 全員失敗を「0票同士の SPLIT」と取り違えないよう、明示的にエラーで返す（fail-closed）
+if (r1.length === 0) {
+  return {
+    error: `Round1 の全レビュアー（${ROLES.length}体）が失敗し、レビューできなかった。利用上限や一時的な障害の可能性がある。時間をおいて再実行すること`,
+    failed_roles: failedRoles,
+    governance_note: 'これは推奨(recommendation)であり決定ではない。',
+  }
+}
 log(`Round1完了: ${r1.length}/${ROLES.length}体` + (HAS_OPTIONS ? ` / position=${r1.map((v) => v.position).join(',')}` : ''))
 
 // ================= Round 2（再spawn・匿名注入）=================
@@ -187,6 +196,7 @@ return {
   topic: TOPIC,
   mode: `--agents${BLIND_ONLY ? ' --blind-only' : ''}`,
   participants: finalRows.length,
+  failed_roles: failedRoles,  // Round1 で失敗したレビュアー（懐疑役が含まれていれば skeptic_voice は null になる）
   rounds: (r2 && r2.length) ? 2 : 1,
   vote,
   conclusion,

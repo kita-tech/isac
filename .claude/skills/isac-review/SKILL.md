@@ -257,12 +257,18 @@ fi
 
 **エージェント数**: 擁護N＋反駁N＋ジャッジ1 ＝ 2N+1（二択で5体）。選択肢数でスケール。
 
+**部分失敗の扱い**: 擁護に失敗した選択肢は比較から除外され、ジャッジも推奨できない（`dropped_options` に入る）。
+`dropped_options` が空でなければ「この選択肢は擁護を得られず比較していない」とレポートに必ず明記する（負けたのではなく、比べていない）。
+擁護が2件未満なら `error`（`degraded: true`）が返るので、推奨として扱わずユーザーに伝える。
+
 ## エージェントチームモード（`--agents`）— 徹底レビュー用（issue-finding）
 
 **目的（実測で再定義）**: 当初は「アンカリング低減」を狙ったが、A/B 実測でそれは達成されず（決定用途は `--dialectic` が担当）。`--agents` の実価値は**多レンズ並列＋実行接地で対象の問題を網羅的に洗い出す“徹底レビュー”**にあった。実装 `.claude/workflows/isac-review-issues.js`、設計は `docs/DESIGN_isac-review-agents.md`。
 
 > **用途**: 設計/コード/計画などの**レビュー（問題の網羅列挙）**。**A vs B の意思決定には使わない → `--dialectic` を使う**。
 > **注**: severity インフレ対策の **adversarial-verify を実装済み**（`isac-review-issues.js` の Verify 段）。🔴High 指摘のみ独立反証者（迷ったら偽陽性/降格に倒す）が接地検証し、confirmed / downgrade / false_positive に再分類する。検証エージェント失敗(null)は安全側で🔴に昇格させない。出力の `verification.raw_high` vs `confirmed_high` で **インフレ量が可視化**される。med/low は対象外（コスト対効果）。偽陽性率の A/B 実測は次段階。
+> **失敗の扱い**: 返却値に `error` があれば（対象の指定漏れ・全レンズ失敗など）レビュー結果として扱わず、内容をそのままユーザーに伝える（「指摘0件」と書かない）。
+> `failed_lenses` が空でなければ「このレンズは失敗し未レビュー」と明記する。`verification.verify_failed` が1以上なら、🔴が0件でも「🔴なし」と書かず、検証できなかった🔴候補（`filtered_out_detail` の `verdict: "unverified"`）を一覧で示す。
 > 下記「フラグ（3直交軸）」以降は初期の投票式 --agents の仕様（決定用途）で、現在は `--dialectic` に置き換え推奨。レビュー用途では issue-finding workflow を用いる。
 
 <details><summary>（旧）投票式 --agents の仕様（決定用途・--dialectic に置換推奨）</summary>
