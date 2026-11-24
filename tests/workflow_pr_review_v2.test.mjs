@@ -147,6 +147,15 @@ await test('SKILL.md: /code-review に渡す実行範囲が workflow の EXEC_RU
   assert.match(skill, /`--allowedTools` だけでは実行を止められない/)
   assert.doesNotMatch(skill, /読み取り系のツールだけを許して動かす（コードを実行させない）/)   // 事実と違った旧記述
 })
+await test('SKILL.md: /code-review のラベルは英語のまま載せず、重要度と由来の2列に日本語で書く（🔴🟡🟢には読み替えない）', async () => {
+  const skill = readFileSync(join(here, '..', '.claude', 'skills', 'isac-pr-review-v2', 'SKILL.md'), 'utf8')
+  assert.match(skill, /\| Important \| 要修正 \| この PR \|/)
+  assert.match(skill, /\| Pre-existing \| 要確認 \| 既存 \|/)
+  assert.match(skill, /\| Nit \| 軽微 \|/)
+  assert.match(skill, /\| # \| 重要度 \| 由来 \| ファイル:行 \| 指摘内容 \| 失敗シナリオ \| 修正案 \|/)   // 出力フォーマットの表
+  assert.match(skill, /🔴🟡🟢 には読み替えない/)
+  assert.doesNotMatch(skill, /\| 1 \| Important \|/)   // 例に英語ラベルを残さない
+})
 await test('並列実行: 実行ありのときだけ、PR のテストを流す係はテスト/保守性レンズ1体。ほかは流さない。名前でぶつかる資源は専用名を使う', async () => {
   const h = reviewsOf({ 'セキュリティ設計/運用リスク': [F({ severity: 'high' })] }, () => OK)
   const ex = await run({ ...BASE, worktree_path: '/tmp/wt', allow_exec: true }, h)
