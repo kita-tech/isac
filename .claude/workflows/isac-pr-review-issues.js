@@ -98,7 +98,10 @@ const reviews = reviewResults.filter(Boolean)
 // 全レンズ失敗を「指摘0件」と取り違えて公開しないよう、明示的にエラーで返す（fail-closed）
 if (reviews.length === 0) {
   return {
-    error: '全レンズのエージェントが失敗した（指摘0件ではない）。model 指定がこの環境で使えるか確認し、使えなければ model を省略して再実行すること',
+    // 原因の案内は model 指定の有無で分ける（省略時に「model を省略して再実行」と誤誘導しない）
+    error: MODEL
+      ? `全レンズ（${LENSES.length}体）が失敗し、レビューできなかった（指摘0件ではない）。モデル指定（model: ${MODEL}）がこの環境で使えるか、利用上限に達していないかを確認すること。使えなければ model を省略して再実行する`
+      : `全レンズ（${LENSES.length}体）が失敗し、レビューできなかった（指摘0件ではない）。セッションのモデルで動かしているので、利用上限や一時的な障害の可能性がある。時間をおいて再実行すること`,
     failed_lenses: failedLenses,
     model: MODEL || 'inherit',
   }
@@ -166,6 +169,10 @@ return {
     confirmed_high: bySev.high.length,
     downgraded: verified.filter((v) => v.verdict === 'downgrade').length,
     filtered_out: filteredOut.length,
+    // 検証エージェントの失敗で🔴に載らなかった件数。偽陽性（false_positive）とは別に数える。
+    // 0 より大きいとき「🔴0件」は「🔴なし」ではない（確かめられなかった🔴候補がある）。
+    verify_failed: filteredOut.filter((v) => v.verdict === 'unverified').length,
+    false_positive: filteredOut.filter((v) => v.verdict === 'false_positive').length,
     filtered_out_detail: filteredOut.map((v) => ({ file: v.file, area: v.area, lens: v.lens, verdict: v.verdict, reason: v.verify_reasoning })),
   },
   multi_lens_files: Object.entries(fileCount).filter(([, n]) => n >= 2).map(([f, n]) => ({ file: f, findings: n })),

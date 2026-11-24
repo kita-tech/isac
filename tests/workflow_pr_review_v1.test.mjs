@@ -76,6 +76,22 @@ await test('全レンズが例外で落ちても error を返す', async () => {
   assert.match(result.error, /全レンズ/)
   assert.equal(result.failed_lenses.length, 5)
 })
+await test('error 文言: model 指定時はモデル名と「省略して再実行」を案内する', async () => {
+  const { result } = await run({ ...BASE, model: 'Fable' }, () => null)
+  assert.match(result.error, /全レンズ（5体）/)
+  assert.match(result.error, /model: fable/)
+  assert.match(result.error, /利用上限/)
+  assert.match(result.error, /model を省略して再実行/)
+})
+await test('error 文言: model 省略時は「model を省略して再実行」と誤誘導しない', async () => {
+  for (const m of [undefined, 'inherit', ' Inherit ']) {
+    const { result } = await run({ ...BASE, model: m }, () => null)
+    assert.match(result.error, /セッションのモデル/)
+    assert.match(result.error, /利用上限や一時的な障害/)
+    assert.doesNotMatch(result.error, /省略して再実行/)
+    assert.doesNotMatch(result.error, /model: /)
+  }
+})
 await test('一部のレンズだけ失敗: 結果は返し、failed_lenses に失敗したレンズ名が入る', async () => {
   const h = (p, o) => (o.label === 'REV:セキュリティ' ? null : { findings: [] })
   const { result } = await run(BASE, h)
@@ -103,6 +119,41 @@ await test('🔴は検証 confirmed のみ。検証失敗は除外側', async ()
   assert.equal(result.counts.high, 1)
   assert.equal(result.high[0].file, 'a.py')
   assert.equal(result.verification.filtered_out, 1)
+  assert.equal(result.verification.verify_failed, 1)
+  assert.equal(result.verification.false_positive, 0)
+})
+
+// ---------- 検証失敗の可視化 ----------
+const highsFrom = (n) => (p, o) => (o.label.startsWith('REV:')
+  ? { findings: o.label === 'REV:セキュリティ' ? Array.from({ length: n }, (_, i) => ({ ...HIGH, file: `f${i}.py` })) : [] }
+  : null)
+await test('検証が全件失敗: 🔴0件でも verify_failed に件数が出る（「🔴なし」と区別できる）', async () => {
+  const { result } = await run(BASE, highsFrom(3))
+  assert.equal(result.error, undefined)
+  assert.equal(result.counts.high, 0)
+  assert.equal(result.verification.raw_high, 3)
+  assert.equal(result.verification.verify_failed, 3)
+  assert.equal(result.verification.false_positive, 0)
+  assert.ok(result.verification.filtered_out_detail.every((d) => d.verdict === 'unverified'))
+})
+await test('検証失敗と偽陽性は別に数える（confirmed / downgrade は除外に入らない）', async () => {
+  const verdicts = { 'f0.py': null, 'f1.py': { verdict: 'false_positive', reasoning: 'r' }, 'f2.py': { verdict: 'confirmed', reasoning: 'r' }, 'f3.py': { verdict: 'downgrade', adjusted_severity: 'low', reasoning: 'r' } }
+  const h = (p, o) => {
+    if (o.label.startsWith('REV:')) return highsFrom(4)(p, o)
+    const key = Object.keys(verdicts).find((k) => o.label.includes(k))
+    return verdicts[key]
+  }
+  const { result } = await run(BASE, h)
+  assert.equal(result.counts.high, 1)
+  assert.equal(result.verification.filtered_out, 2)
+  assert.equal(result.verification.verify_failed, 1)
+  assert.equal(result.verification.false_positive, 1)
+  assert.equal(result.verification.downgraded, 1)
+})
+await test('🔴候補が無ければ verify_failed / false_positive は 0', async () => {
+  const { result } = await run(BASE, EMPTY)
+  assert.equal(result.verification.verify_failed, 0)
+  assert.equal(result.verification.false_positive, 0)
 })
 
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`)
