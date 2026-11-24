@@ -14,14 +14,11 @@
  *   - diff: `gh pr diff <PR>` の出力（レビューの一次対象・必須）
  *   - worktree_path: PR ブランチを checkout した worktree（周辺コード参照・実行接地に使う）
  *   - context: PR タイトル/説明/議論など補助文脈
- *   - model: レビュー/検証エージェントのモデル（既定 'fable'。'inherit' でセッション継承に戻す）
+ *   - model: レビュー/検証エージェントのモデル（省略または 'inherit' でセッション継承。エイリアスを渡すとそのモデル）
  *
- * モデル方針（CLAUDE.md「Skill ごとの model は原則 inherit」の明示的例外）:
- *   本 workflow の Review/Verify は既定で Fable 5 に固定する。理由は (1) 出力が公開・不可逆な PR
- *   コメントであり、issue 発見の網羅性と🔴偽陽性ゲートの判定精度が成果物の質に直結する、(2) その質を
- *   セッション側のモデル選択に左右させたくない、の2点（＝例外条項「品質の問題が観測された/技術的必然」に該当）。
- *   固定はエイリアス（'fable'）であり具体 model ID ではないため世代交代で腐らない（agents の 'haiku' と同型）。
- *   対応外プランのメンバーは args.model で上書きできる（配布事故の回避策）。
+ * モデル方針: CLAUDE.md「Skill ごとの model は原則 inherit」に従い、既定はセッション継承。
+ *   特定モデルで動かしたいときだけ args.model で明示する（例外条項の「技術的必然/実測」が無いため既定では固定しない）。
+ *   全レンズが失敗した場合は「指摘0件」と区別するため error を返す（未対応モデル指定などで黙って空のレビューにしない）。
  */
 
 export const meta = {
@@ -40,8 +37,9 @@ const PR_NUMBER = A.pr_number || ''
 const DIFF = A.diff || ''
 const WORKTREE = A.worktree_path || ''
 const CONTEXT = A.context || ''
-// 既定 Fable 5 固定。'inherit' 指定時のみ undefined = セッション継承（詳細は冒頭のモデル方針）。
-const MODEL = A.model === 'inherit' ? undefined : (A.model || 'fable')
+// 既定はセッション継承（undefined）。表記ゆれ（'Inherit' 等）は正規化する（詳細は冒頭のモデル方針）。
+const MODEL_ARG = typeof A.model === 'string' ? A.model.trim().toLowerCase() : ''
+const MODEL = MODEL_ARG && MODEL_ARG !== 'inherit' ? MODEL_ARG : undefined
 if (!DIFF) {
   return { error: 'diff が必須（gh pr diff <PR> の出力を渡すこと）' }
 }
@@ -86,7 +84,7 @@ const SCHEMA = {
 
 // ===== Review（多レンズ並列・投票なし）=====
 phase('Review')
-const reviews = (await parallel(LENSES.map((L) => () =>
+const reviewResults = await parallel(LENSES.map((L) => () =>
   agent(
     `${TARGET}\n${CONTEXT ? '\n【PR文脈(タイトル/説明/議論)】' + CONTEXT + '\n' : ''}\n` +
     `あなたは【${L.label}】レンズの PR レビュアー。観点: ${L.focus}\n` +
@@ -94,7 +92,17 @@ const reviews = (await parallel(LENSES.map((L) => () =>
     `runnable なら実際に読んで/走らせて確認し、接地しない断定はしない。🔴High は「マージ前必須修正」級に限る。問題が無ければ findings は空配列。`,
     { label: `REV:${L.label}`, phase: 'Review', schema: SCHEMA, model: MODEL }
   ).then((r) => (r ? { ...r, lens: L.label } : null))   // 失敗(null)は保持・lensはコード側を勝たせる
-))).filter(Boolean)
+))
+const failedLenses = LENSES.filter((L, i) => !reviewResults[i]).map((L) => L.label)
+const reviews = reviewResults.filter(Boolean)
+// 全レンズ失敗を「指摘0件」と取り違えて公開しないよう、明示的にエラーで返す（fail-closed）
+if (reviews.length === 0) {
+  return {
+    error: '全レンズのエージェントが失敗した（指摘0件ではない）。model 指定がこの環境で使えるか確認し、使えなければ model を省略して再実行すること',
+    failed_lenses: failedLenses,
+    model: MODEL || 'inherit',
+  }
+}
 
 const all = []
 for (const r of reviews) for (const f of (r.findings || [])) all.push({ lens: r.lens, ...f })
@@ -146,6 +154,7 @@ return {
   pr_number: PR_NUMBER || null,
   model: MODEL || 'inherit',   // レビュー/検証に使ったモデル（レポートに併記して再現性を担保）
   lenses: LENSES.map((l) => l.label),
+  failed_lenses: failedLenses,   // 失敗して未レビューのレンズ（空でなければレポートに明記する）
   total_findings: all.length,
   counts: { high: bySev.high.length, med: bySev.med.length, low: bySev.low.length },
   high: bySev.high,   // confirmed のみ = 公開🔴に載せてよいもの

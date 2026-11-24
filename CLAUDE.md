@@ -324,9 +324,8 @@ effort: high
 | 対象 | 指定 | 理由 |
 |------|------|------|
 | `.claude/agents/memory-{classifier,editor,searcher}.md` | `haiku` | Memory Service の CRUD・検索が主体。上位モデルの推論力を要さず、単価差が効く |
-| `.claude/workflows/isac-pr-review-issues.js` の Review/Verify エージェント | `fable`（既定・`args.model` で上書き可） | 出力が**公開・不可逆な PR コメント**で、issue 発見の網羅性と🔴偽陽性ゲートの判定精度が質に直結する。セッション側のモデル選択に左右させない。`/isac-pr-review --agents` 時のみ適用（インラインモードは従来どおり継承） |
 
-いずれも**エイリアス**（`haiku` / `fable`）での指定であり、具体 model ID ではないため世代交代で腐らない。
+**エイリアス**（`haiku`）での指定であり、具体 model ID ではないため世代交代で腐らない。
 例外を作る場合もエイリアスを使い、対応外プランのメンバー向けに**上書き手段を必ず用意する**こと。
 
 ## ナレッジ共有と承認フロー
