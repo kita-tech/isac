@@ -591,6 +591,51 @@ else
     test_fail "マージ冪等性" "allow 件数が変化した ($BEFORE_LEN → $AFTER_LEN)"
 fi
 
+# 12-8. 追加するものが無ければ settings.json を書き換えない（並び順・書式・パーミッションを保つ）
+#       ISAC の項目を全部含むが、並び順を逆にし、書式も独自（インデント4・1行配列）にした settings.json を置く
+jq -c '.permissions.allow |= reverse | .permissions.deny |= reverse' .claude/settings.json \
+    | jq --indent 4 . > .claude/_s.json && mv .claude/_s.json .claude/settings.json
+chmod 644 .claude/settings.json
+BEFORE_SUM=$(shasum .claude/settings.json | cut -d' ' -f1)
+OUTPUT=$("$ISAC_CMD" init --yes 2>&1)
+AFTER_SUM=$(shasum .claude/settings.json | cut -d' ' -f1)
+if [ "$BEFORE_SUM" = "$AFTER_SUM" ] && echo "$OUTPUT" | grep -q "already present"; then
+    test_pass "追加が無ければ settings.json をバイト単位で変更しない（並び順・書式を保つ）"
+else
+    test_fail "settings.json の無変更" "内容が書き換えられた or メッセージが違う"
+fi
+
+# 12-9. 足りない項目だけを末尾に足し、既存の並び順は保つ
+#       既存: ユーザー独自2件 → ISAC の git → 独自1件（ISAC の他項目は無い）
+jq '.permissions.allow = ["Bash(zzz:*)", "Bash(aaa:*)", "Bash(git:*)", "Bash(mmm:*)"] | .permissions.deny = ["Bash(rm -rf /*)", "Bash(custom-deny:*)"]' \
+    .claude/settings.json > .claude/_s.json && mv .claude/_s.json .claude/settings.json
+chmod 640 .claude/settings.json   # 12-10 で、書き換え後もこのパーミッションが残るかを見る
+"$ISAC_CMD" init --yes >/dev/null 2>&1
+EXPECTED_ALLOW='["Bash(zzz:*)","Bash(aaa:*)","Bash(git:*)","Bash(mmm:*)"]'
+HEAD4=$(jq -c '.permissions.allow[0:4]' .claude/settings.json)
+ISAC_ALLOW_LEN=$(jq '[.permissions.allow[] | select(. != "Bash(zzz:*)" and . != "Bash(aaa:*)" and . != "Bash(mmm:*)")] | length' .claude/settings.json)
+GIT_COUNT=$(jq '[.permissions.allow[] | select(. == "Bash(git:*)")] | length' .claude/settings.json)
+DENY_HEAD=$(jq -c '.permissions.deny[0:2]' .claude/settings.json)
+if [ "$HEAD4" = "$EXPECTED_ALLOW" ] && [ "$GIT_COUNT" = "1" ] && [ "$ISAC_ALLOW_LEN" -gt 1 ] \
+   && [ "$DENY_HEAD" = '["Bash(rm -rf /*)","Bash(custom-deny:*)"]' ]; then
+    test_pass "足りない ISAC 項目だけを末尾に追加し、既存の並び順を保つ（重複も作らない）"
+else
+    test_fail "並び順の保持" "allow 先頭=$HEAD4 git件数=$GIT_COUNT deny先頭=$DENY_HEAD"
+fi
+# 追加された項目は ISAC 定義の順で並ぶ（2つ目以降の ISAC 項目の相対順）
+if jq -e '.permissions.allow | (index("Bash(gh pr:*)") < index("Bash(jq:*)")) and (index("Bash(jq:*)") < index("Bash(cat:*)"))' .claude/settings.json >/dev/null 2>&1; then
+    test_pass "追加された ISAC 項目は ISAC 定義の順で並ぶ"
+else
+    test_fail "追加項目の順序" "$(jq -c '.permissions.allow' .claude/settings.json)"
+fi
+
+# 12-10. 書き換えるときも元ファイルのパーミッションを保つ（mktemp の 600 にしない）
+if [ "$(stat -f %Lp .claude/settings.json 2>/dev/null || stat -c %a .claude/settings.json)" = "640" ]; then
+    test_pass "マージで書き換えても settings.json のパーミッション（640）を保つ"
+else
+    test_fail "パーミッション保持" "$(ls -l .claude/settings.json)"
+fi
+
 rm -rf "$TEST_DIR"
 cd "$SCRIPT_DIR"
 
