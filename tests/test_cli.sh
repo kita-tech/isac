@@ -607,7 +607,7 @@ fi
 
 # 12-9. 足りない項目だけを末尾に足し、既存の並び順は保つ
 #       既存: ユーザー独自2件 → ISAC の git → 独自1件（ISAC の他項目は無い）
-jq '.permissions.allow = ["Bash(zzz:*)", "Bash(aaa:*)", "Bash(git:*)", "Bash(mmm:*)"] | .permissions.deny = ["Bash(rm -rf /*)", "Bash(custom-deny:*)"]' \
+jq '.permissions.allow = ["Bash(zzz:*)", "Bash(aaa:*)", "Bash(git:*)", "Bash(mmm:*)"] | .permissions.deny = ["Bash(git push --force:*)", "Bash(custom-deny:*)"]' \
     .claude/settings.json > .claude/_s.json && mv .claude/_s.json .claude/settings.json
 chmod 640 .claude/settings.json   # 12-10 で、書き換え後もこのパーミッションが残るかを見る
 "$ISAC_CMD" init --yes >/dev/null 2>&1
@@ -617,7 +617,7 @@ ISAC_ALLOW_LEN=$(jq '[.permissions.allow[] | select(. != "Bash(zzz:*)" and . != 
 GIT_COUNT=$(jq '[.permissions.allow[] | select(. == "Bash(git:*)")] | length' .claude/settings.json)
 DENY_HEAD=$(jq -c '.permissions.deny[0:2]' .claude/settings.json)
 if [ "$HEAD4" = "$EXPECTED_ALLOW" ] && [ "$GIT_COUNT" = "1" ] && [ "$ISAC_ALLOW_LEN" -gt 1 ] \
-   && [ "$DENY_HEAD" = '["Bash(rm -rf /*)","Bash(custom-deny:*)"]' ]; then
+   && [ "$DENY_HEAD" = '["Bash(git push --force:*)","Bash(custom-deny:*)"]' ]; then
     test_pass "足りない ISAC 項目だけを末尾に追加し、既存の並び順を保つ（重複も作らない）"
 else
     test_fail "並び順の保持" "allow 先頭=$HEAD4 git件数=$GIT_COUNT deny先頭=$DENY_HEAD"
@@ -634,6 +634,38 @@ if [ "$(stat -f %Lp .claude/settings.json 2>/dev/null || stat -c %a .claude/sett
     test_pass "マージで書き換えても settings.json のパーミッション（640）を保つ"
 else
     test_fail "パーミッション保持" "$(ls -l .claude/settings.json)"
+fi
+
+# 12-11. deny はルート全削除だけを完全一致で拒否し、絶対パスの削除を巻き込む "Bash(rm -rf /*)" は配布しない
+#        （Bash ルールの * は任意の文字列に当たるため、"rm -rf /*" は rm -rf /private/tmp/xxx も拒否していた）
+rm -rf .claude
+"$ISAC_CMD" init --yes >/dev/null 2>&1
+if jq -e '.permissions.deny | index("Bash(rm -rf /)") and index("Bash(rm -rf / *)")' .claude/settings.json >/dev/null 2>&1 \
+   && ! jq -e '.permissions.deny | index("Bash(rm -rf /*)")' .claude/settings.json >/dev/null 2>&1; then
+    test_pass "新規 init の deny は rm -rf / と rm -rf / * で、rm -rf /* は含まない"
+else
+    test_fail "deny ルール" "$(jq -c '.permissions.deny' .claude/settings.json)"
+fi
+
+# 12-12. 既存 settings.json に残る旧ルール "Bash(rm -rf /*)" は再 init で取り除き、新ルールを足す。
+#        似ているが別の文字列のユーザー独自ルールは消さない。ほかの並び順は保つ
+jq '.permissions.deny = ["Bash(custom-a:*)", "Bash(rm -rf /*)", "Bash(rm -rf /*:*)", "Bash(git push --force:*)", "Bash(custom-b:*)"]' \
+    .claude/settings.json > .claude/_s.json && mv .claude/_s.json .claude/settings.json
+OUTPUT=$("$ISAC_CMD" init --yes 2>&1)
+DENY=$(jq -c '.permissions.deny' .claude/settings.json)
+if [ "$DENY" = '["Bash(custom-a:*)","Bash(rm -rf /*:*)","Bash(git push --force:*)","Bash(custom-b:*)","Bash(rm -rf /)","Bash(rm -rf / *)","Bash(git push --force-with-lease:*)"]' ] \
+   && echo "$OUTPUT" | grep -q 'Removed deprecated ISAC rule(s): Bash(rm -rf /\*)'; then
+    test_pass "再 init で旧ルール rm -rf /* だけを取り除き、新ルールを末尾に足す（他の並び順・似た独自ルールは保つ）"
+else
+    test_fail "旧ルールの移行" "deny=$DENY"
+fi
+# 移行後の再 init は何も変えない（冪等）
+BEFORE_SUM=$(shasum .claude/settings.json | cut -d' ' -f1)
+OUTPUT=$("$ISAC_CMD" init --yes 2>&1)
+if [ "$BEFORE_SUM" = "$(shasum .claude/settings.json | cut -d' ' -f1)" ] && ! echo "$OUTPUT" | grep -q "Removed deprecated"; then
+    test_pass "旧ルール移行後の再 init は settings.json を変更しない"
+else
+    test_fail "移行後の冪等性" "settings.json が変化した or 削除メッセージが出た"
 fi
 
 rm -rf "$TEST_DIR"
