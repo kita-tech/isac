@@ -716,9 +716,26 @@ isac_permissions_json() {
             "Bash(bash .claude/hooks/sensitive-filter.sh:*)"
         ],
         deny: [
-            "Bash(rm -rf /*)",
+            "Bash(rm -rf /)",
+            "Bash(rm -rf / *)",
             "Bash(git push --force:*)",
             "Bash(git push --force-with-lease:*)"
+        ]
+    }'
+}
+
+# 以前の ISAC が配布していたが、現在は配布しない permissions ルール。
+# 再 init のマージで、既存 settings.json からこれらの「完全に同じ文字列」だけを取り除く。
+#   - "Bash(rm -rf /*)": Bash ルールの * は空白を含む任意の文字列に当たるため、ルート全削除だけでなく
+#     rm -rf /private/tmp/xxx のような絶対パス指定の削除をすべて拒否していた。
+#     ルール内でリテラルの * を表す記法は無いので、"Bash(rm -rf /)"（完全一致）と
+#     "Bash(rm -rf / *)"（ / の後に空白で続く引数。末尾の「空白＋*」は rm -rf / 単体にも当たる）に置き換えた。
+#     シェルのグロブとしての rm -rf /* はこの形では表せない（deny はセキュリティ境界ではない点にも注意）。
+isac_deprecated_permissions_json() {
+    jq -n '{
+        allow: [],
+        deny: [
+            "Bash(rm -rf /*)"
         ]
     }'
 }
@@ -726,30 +743,40 @@ isac_permissions_json() {
 # 既存 settings.json に ISAC の permissions を非破壊マージする
 #   - allow/deny: 既存の並び順はそのまま保ち、足りない ISAC の項目だけを ISAC 定義の順で末尾に追加する
 #     （既存項目の並べ替え・重複除去はしない。ユーザーが書いた内容を動かさない）
+#   - 以前の ISAC が配布した廃止ルール（isac_deprecated_permissions_json）は、完全一致する項目だけ取り除く
 #   - defaultMode: ユーザー設定を尊重し、未設定時のみ付与
-#   - 追加するものが無ければファイルを書き換えない（書式・並び順・パーミッションをそのまま保つ）
+#   - 追加・削除するものが無ければファイルを書き換えない（書式・並び順・パーミッションをそのまま保つ）
 merge_permissions_into_settings() {
     local settings_file=".claude/settings.json"
-    local perms tmp
+    local perms deprecated tmp removed
     perms=$(isac_permissions_json)
+    deprecated=$(isac_deprecated_permissions_json)
     tmp=$(mktemp)
-    if jq --argjson p "${perms}" '
+    if jq --argjson p "${perms}" --argjson d "${deprecated}" '
         # 既存配列 cur に、cur に無い new の要素だけを new の順で足す（cur の順は保つ）
         def append_missing($cur; $new):
             reduce $new[] as $x ($cur; if any(.[]; . == $x) then . else . + [$x] end);
+        # 廃止ルールと完全に一致する項目だけを取り除く（順は保つ）
+        def drop_deprecated($old): map(select(. as $x | any($old[]; . == $x) | not));
         .permissions //= {} |
-        .permissions.allow = append_missing(.permissions.allow // []; $p.allow) |
-        .permissions.deny  = append_missing(.permissions.deny  // []; $p.deny) |
+        .permissions.allow = append_missing((.permissions.allow // []) | drop_deprecated($d.allow); $p.allow) |
+        .permissions.deny  = append_missing((.permissions.deny  // []) | drop_deprecated($d.deny);  $p.deny) |
         .permissions.defaultMode = (.permissions.defaultMode // $p.defaultMode)
     ' "${settings_file}" > "${tmp}" 2>/dev/null && [ -s "${tmp}" ]; then
         if jq -e --slurpfile merged "${tmp}" '. == $merged[0]' "${settings_file}" >/dev/null 2>&1; then
             rm -f "${tmp}"
             echo -e "  ${GREEN}✓${NC} ISAC command permissions already present in .claude/settings.json (unchanged)"
         else
+            removed=$(jq -r --argjson d "${deprecated}" \
+                '[(.permissions.allow // [])[], (.permissions.deny // [])[]] | map(select(. as $x | any(($d.allow + $d.deny)[]; . == $x))) | unique | join(", ")' \
+                "${settings_file}" 2>/dev/null || true)
             # mv ではなく上書きで書き戻す（mktemp の 600 にならず、元ファイルのパーミッションを保つ）
             cat "${tmp}" > "${settings_file}"
             rm -f "${tmp}"
             echo -e "  ${GREEN}✓${NC} Merged ISAC command permissions into .claude/settings.json"
+            if [ -n "${removed}" ]; then
+                echo -e "  ${GREEN}✓${NC} Removed deprecated ISAC rule(s): ${removed}"
+            fi
         fi
     else
         rm -f "${tmp}"

@@ -543,7 +543,7 @@ open htmlcov/index.html
 - MCP APIキーはプロジェクトごとに `.isac.secrets.yaml` で管理する（`.isac.secrets.yaml` > 環境変数の優先順位）
 - `.isac.secrets.yaml` は `KEY: VALUE` フラットYAMLのみサポート（ネスト非対応）
 - 許可キーをホワイトリストで制限（`NOTION_API_TOKEN`, `CONTEXT7_API_KEY`のみ。環境変数インジェクション防止）
-- `isac init` はプロジェクトの `.claude/settings.json` に **ISAC スキル用のコマンド許可（`permissions.allow`）** を配布する（他プロジェクトで `curl`/`jq`/`git`/`gh` 等の実行確認が多発する問題への対策）。許可は `bin/isac` の `isac_permissions_json()` が単一定義。`git push --force` 等は `deny` で保護。`defaultMode` は `acceptEdits`。既存の `settings.json` には**非破壊マージ**（`allow`/`deny` は既存の並び順を保ったまま、足りない ISAC の項目だけを末尾に追加。`defaultMode` は未設定時のみ付与、ユーザー独自キーは保持。追加が無ければファイルを書き換えない。冪等）するため、**既存プロジェクトは `isac init` を再実行すれば治癒**する。
+- `isac init` はプロジェクトの `.claude/settings.json` に **ISAC スキル用のコマンド許可（`permissions.allow`）** を配布する（他プロジェクトで `curl`/`jq`/`git`/`gh` 等の実行確認が多発する問題への対策）。許可は `bin/isac` の `isac_permissions_json()` が単一定義。`git push --force` 等とルート全削除（`rm -rf /`・`rm -rf / *`）は `deny` で保護（Bash ルールの `*` は任意の文字列に当たるため、`rm -rf /*` と書くと絶対パス指定の削除がすべて拒否される。この旧ルールは再 init で取り除く。deny はセキュリティ境界ではない）。`defaultMode` は `acceptEdits`。既存の `settings.json` には**非破壊マージ**（`allow`/`deny` は既存の並び順を保ったまま、足りない ISAC の項目だけを末尾に追加。`defaultMode` は未設定時のみ付与、ユーザー独自キーは保持。追加が無ければファイルを書き換えない。冪等）するため、**既存プロジェクトは `isac init` を再実行すれば治癒**する。
 
 ## 記憶の廃止機能
 
