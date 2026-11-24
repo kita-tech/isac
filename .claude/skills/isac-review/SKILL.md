@@ -21,11 +21,12 @@ PROJECT_ID=$(grep "project_id:" .isac.yaml 2>/dev/null | sed 's/project_id: *//'
 ## 使い方
 
 ```
-/isac-review [議題]                    # 既定: インライン（1体が4ペルソナを演じる）
-/isac-review --agents [議題]           # エージェントチーム（ブラインド並列。同調バイアス低減）
+/isac-review [議題]                    # 既定: インライン（1体が4ペルソナを演じる）。--quick / --full / --team で人数を変える
+/isac-review --dialectic [議題]        # 選択肢の意思決定（A vs B）。選択肢ごとに擁護役を立てて独立ジャッジが比べる
+/isac-review --agents [対象]           # 徹底レビュー。多レンズで対象の問題を網羅して洗い出す（issue-finding）
 ```
 
-`--agents` の詳細は末尾「エージェントチームモード」を参照。指定が無ければ従来どおりインラインで動作する。
+`--dialectic` / `--agents` の詳細は「モードの使い分け」以降を参照。指定が無ければ従来どおりインラインで動作する。
 
 ## 実行手順
 
@@ -269,50 +270,29 @@ fi
 > **注**: severity インフレ対策の **adversarial-verify を実装済み**（`isac-review-issues.js` の Verify 段）。🔴High 指摘のみ独立反証者（迷ったら偽陽性/降格に倒す）が接地検証し、confirmed / downgrade / false_positive に再分類する。検証エージェント失敗(null)は安全側で🔴に昇格させない。出力の `verification.raw_high` vs `confirmed_high` で **インフレ量が可視化**される。med/low は対象外（コスト対効果）。偽陽性率の A/B 実測は次段階。
 > **失敗の扱い**: 返却値に `error` があれば（対象の指定漏れ・全レンズ失敗など）レビュー結果として扱わず、内容をそのままユーザーに伝える（「指摘0件」と書かない）。
 > `failed_lenses` が空でなければ「このレンズは失敗し未レビュー」と明記する。`verification.verify_failed` が1以上なら、🔴が0件でも「🔴なし」と書かず、検証できなかった🔴候補（`filtered_out_detail` の `verdict: "unverified"`）を一覧で示す。
-> 下記「フラグ（3直交軸）」以降は初期の投票式 --agents の仕様（決定用途）で、現在は `--dialectic` に置き換え推奨。レビュー用途では issue-finding workflow を用いる。
-
-<details><summary>（旧）投票式 --agents の仕様（決定用途・--dialectic に置換推奨）</summary>
-
-> **対象は同調バイアスのみ**。事実バグ（plausible-but-wrong）は実行検証（§2.5）と別モデルのクロスチェックの担当。
-
-### フラグ（3直交軸）
-| 軸 | フラグ | 既定 |
-|----|--------|------|
-| 実行方式 | `--agents`（別エージェント）/ `--inline`（明示インライン） | インライン |
-| 体数 N | `--quick`(2) / 無(4) / `--full`(5) / `--team`(10) | 4 |
-| ラウンド | `--blind-only`（Round2 討論を省略） | 討論あり |
-
-例: `/isac-review --agents 認証方式の選定` ／ `/isac-review --agents --full` ／ `/isac-review --agents --blind-only`
-
-### バリデーション（実行前）
-1. 体数フラグ（`--quick/--full/--team`）は**1つのみ**。複数指定はエラー。
-2. `--blind-only` 単独は `--agents --blind-only` と解釈し、その旨を一言告知。
-3. `--agents` 無しは従来インライン（**後方互換**）。`--inline` は明示インライン（`--agents` と相互排他）。
-4. **コストガード**: 総 spawn（debate=2N ／ `--blind-only`=N）が **12 を超える**なら実行前に確認する（例 `--team`=20 spawn → 「20 spawn を起動します。続けますか？」）。
 
 ### 実行手順（`--agents` 指定時）
-1. フラグを解析し **N・blindOnly** を決定。バリデーション＋コストガードを実施。
-2. **議題(topic)** と **レビュー材料(context)** を用意（ユーザー入力＋会話文脈から設計文/要約を組み立てる）。
-3. **選択肢(options)**: 議題が離散選択（例「JWT vs セッション」）なら `options` 配列を作る。オープンな設計相談なら options なし（各推奨を人間が統合）。
-4. **Workflow を起動**: Workflow ツールを `{ name: "isac-review-agents", args: { topic, context, options, N, blindOnly } }` で呼ぶ（Skill が指示する Workflow ＝明示オプトインに該当）。
-5. Workflow 完了後、返却オブジェクトから**推奨レポート**を整形提示（下記）。
 
-### 出力（推奨レポート・提示順）
-**投票を丸めない・懐疑を埋没させない**ため、以下の順で提示する:
-1. **🔴 致命リスク / 懐疑の指摘**（`critical_highlights` / `skeptic_voice`）を**最初に前面提示**（票数に還元しない）。
-2. **投票結果**（`vote`）と **結論**（`conclusion`。`SPLIT` ならユーザー裁定を促す）。
-3. **一致の provenance**（`provenance` があれば注記＝「一致≠独立検証」）。
-4. **争点**（`contested` 逐語）／ **少数意見**（`minority_report`）／ **立場変更ログ**（`change_log`）。
-5. **実行検証**（`verified_claims`）／ **新リスク**（`new_risks`）。
+1. **レビュー対象**を決める。ファイルなら `artifact_path`（レビュアーが実際に読む・構文チェックする）、会話中の設計文などなら `artifact` に本文を渡す。
+2. **文脈(context)** を用意する（目的・前提・制約など。任意）。
+3. **Workflow を起動**: `{ name: "isac-review-issues", args: { artifact_path | artifact, context } }`（Skill が指示する Workflow ＝明示オプトインに該当）。
+   レンズは5つ固定（セキュリティ／信頼性・エラー処理／パフォーマンス・コスト／保守性・可読性／エッジケース・懐疑）。
+4. 返却値を重大度別（🔴 `high` = 検証を通ったもののみ／🟡 `med`／🟢 `low`）に整形して提示する。上の「失敗の扱い」に従う。
 
-### ガバナンス（重要・CLAUDE.md 原則9）
-- 出力は**推奨（recommendation）であって決定ではない**。
-- **`type=decision` として自動保存しない**。決定として残すかは**ユーザーが `/isac-decide` で確認・確定**する（レビュー結論を下書きに使ってよい）。
+### フラグの扱い
 
-### 内部呼び出し
-- `/isac-autopilot` 等が内部で isac-review を呼ぶ経路は **`--inline` を明示**する（将来 `--agents` が既定化されてもコスト・レイテンシが静かに暴発しないように）。
+| フラグ | 扱い |
+|--------|------|
+| `--inline` | 明示インライン（`--agents` と相互排他）。`/isac-autopilot` 等が内部で isac-review を呼ぶ経路は `--inline` を明示する（`--agents` の追加コストが自動フローで静かに発生しないように） |
+| `--quick` / `--full` / `--team` | **インラインの人数指定**（上の「オプション: ペルソナ数の変更」）。`--agents` と一緒に指定されても `--agents` のレンズ数（5つ固定）は変わらないので、無視する旨を一言伝える |
+| `--blind-only` | **廃止**（旧・投票式 `--agents` 専用だった）。指定されたら、廃止済みであることと、レビューなら `--agents`、選択肢の意思決定なら `--dialectic` を使うことを伝える |
 
-</details>
+> **旧・投票式 `--agents`（`isac-review-agents` workflow）は起動しない。** 決定用途は `--dialectic` に、レビュー用途は issue-finding に置き換えた。
+> 旧仕様（3直交軸のフラグ・投票集計・推奨レポートの形式）は記録として `docs/DESIGN_isac-review-agents.md` の付録に移した。
+
+### ガバナンス（CLAUDE.md 原則9）
+- `--agents` / `--dialectic` の出力は**推奨（recommendation）であって決定ではない**。`type=decision` として自動保存しない。
+  決定として残すかはユーザーが `/isac-decide` で確認・確定する（レビュー結論を下書きに使ってよい）。
 
 ## 関連スキル
 

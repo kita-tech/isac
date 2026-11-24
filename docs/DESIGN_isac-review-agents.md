@@ -360,3 +360,49 @@ PR#65 の diff を **Gemini にレビューさせた**ところ、同一モデ�
 | 5 | CLI フラグ | 3直交軸。`--agents`／体数排他／`--blind-only`含意／コストガード12（§12） |
 
 **次アクション**: (1) ✅ 設計書を `docs/` へ PR 化（PR#65）＋ CLAUDE.md 原則9 追記。(2) ✅ 最小 PoC 実施（§13）で機構を接地。(3) 本実装（Workflow スクリプト＋`bin/isac` 配布経路＋SKILL.md `--agents` 分岐）に §13 の改善（🔴/懐疑ハイライト・provenance・§8 拡張計測・内部呼び出し bare pin）を織り込む。named workflow の ISAC 配布は本実装で接地。
+
+## 付録: 旧・投票式 `--agents` の SKILL 手順（廃止）
+
+> **廃止**: `/isac-review --agents` は issue-finding（`.claude/workflows/isac-review-issues.js`）に、選択肢の意思決定は `--dialectic` に置き換えた。
+> 以下は `isac-review` の SKILL.md にあった旧手順の記録で、**この手順で `isac-review-agents` を起動しない**（SKILL.md からは削除済み）。
+> `.claude/workflows/isac-review-agents.js` は、この記録とテスト（`tests/workflow_review.test.mjs`）のために残している。
+
+
+> **対象は同調バイアスのみ**。事実バグ（plausible-but-wrong）は実行検証（§2.5）と別モデルのクロスチェックの担当。
+
+#### フラグ（3直交軸）
+| 軸 | フラグ | 既定 |
+|----|--------|------|
+| 実行方式 | `--agents`（別エージェント）/ `--inline`（明示インライン） | インライン |
+| 体数 N | `--quick`(2) / 無(4) / `--full`(5) / `--team`(10) | 4 |
+| ラウンド | `--blind-only`（Round2 討論を省略） | 討論あり |
+
+例: `/isac-review --agents 認証方式の選定` ／ `/isac-review --agents --full` ／ `/isac-review --agents --blind-only`
+
+#### バリデーション（実行前）
+1. 体数フラグ（`--quick/--full/--team`）は**1つのみ**。複数指定はエラー。
+2. `--blind-only` 単独は `--agents --blind-only` と解釈し、その旨を一言告知。
+3. `--agents` 無しは従来インライン（**後方互換**）。`--inline` は明示インライン（`--agents` と相互排他）。
+4. **コストガード**: 総 spawn（debate=2N ／ `--blind-only`=N）が **12 を超える**なら実行前に確認する（例 `--team`=20 spawn → 「20 spawn を起動します。続けますか？」）。
+
+#### 実行手順（`--agents` 指定時）
+1. フラグを解析し **N・blindOnly** を決定。バリデーション＋コストガードを実施。
+2. **議題(topic)** と **レビュー材料(context)** を用意（ユーザー入力＋会話文脈から設計文/要約を組み立てる）。
+3. **選択肢(options)**: 議題が離散選択（例「JWT vs セッション」）なら `options` 配列を作る。オープンな設計相談なら options なし（各推奨を人間が統合）。
+4. **Workflow を起動**: Workflow ツールを `{ name: "isac-review-agents", args: { topic, context, options, N, blindOnly } }` で呼ぶ（Skill が指示する Workflow ＝明示オプトインに該当）。
+5. Workflow 完了後、返却オブジェクトから**推奨レポート**を整形提示（下記）。
+
+#### 出力（推奨レポート・提示順）
+**投票を丸めない・懐疑を埋没させない**ため、以下の順で提示する:
+1. **🔴 致命リスク / 懐疑の指摘**（`critical_highlights` / `skeptic_voice`）を**最初に前面提示**（票数に還元しない）。
+2. **投票結果**（`vote`）と **結論**（`conclusion`。`SPLIT` ならユーザー裁定を促す）。
+3. **一致の provenance**（`provenance` があれば注記＝「一致≠独立検証」）。
+4. **争点**（`contested` 逐語）／ **少数意見**（`minority_report`）／ **立場変更ログ**（`change_log`）。
+5. **実行検証**（`verified_claims`）／ **新リスク**（`new_risks`）。
+
+#### ガバナンス（重要・CLAUDE.md 原則9）
+- 出力は**推奨（recommendation）であって決定ではない**。
+- **`type=decision` として自動保存しない**。決定として残すかは**ユーザーが `/isac-decide` で確認・確定**する（レビュー結論を下書きに使ってよい）。
+
+#### 内部呼び出し
+- `/isac-autopilot` 等が内部で isac-review を呼ぶ経路は **`--inline` を明示**する（将来 `--agents` が既定化されてもコスト・レイテンシが静かに暴発しないように）。

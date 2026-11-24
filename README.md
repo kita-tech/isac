@@ -306,7 +306,7 @@ isac/
 │   │   ├── memory-editor.md
 │   │   └── memory-searcher.md
 │   └── workflows/              # マルチエージェントWorkflowスクリプト
-│       ├── isac-review-agents.js     # --agents（多レンズ投票）
+│       ├── isac-review-agents.js     # 旧・投票式 --agents（廃止。記録とテスト用に残置）
 │       ├── isac-review-issues.js     # --agents レビュー版（issue-finding＋🔴検証）
 │       ├── isac-review-dialectic.js  # --dialectic（弁証法・意思決定）
 │       ├── isac-pr-review-issues.js  # PRレビュー徹底版
