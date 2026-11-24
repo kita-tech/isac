@@ -78,6 +78,15 @@ pytest tests/test_memory_service.py -v
 | post-edit.sh | メモリ記録、機密ファイルスキップ、エラーハンドリング |
 | isac CLI | help, version, status, projects, init |
 
+### CLIテスト (`test_cli.sh`)
+
+`isac install` / `update` / `init` は `~/.isac` や `~/.claude`（CLAUDE.md・settings.json・statusline）、`~/.claude.json`（MCP 登録）に書き込む。
+そのため **CLI テストは全体を一時 HOME で実行する**（冒頭で `HOME` を `mktemp -d` に差し替え、そこに `isac install` してから各テストを流す）。
+テストしているブランチの内容が自分の環境に配られることはない。最後のテスト20で、実 HOME の配布物が変更されていないことを確かめる。
+
+- テストに `$HOME` を使う処理を足すときは、一時 HOME を前提に書くこと（実 HOME が必要なら `REAL_HOME` を使い、書き込まない）
+- 一時 HOME には `~/.gitconfig` が無いため、git の作者情報は `GIT_AUTHOR_*` / `GIT_COMMITTER_*` で与えている
+
 ### 統合テスト (`test_integration.sh`)
 
 | シナリオ | 内容 |
