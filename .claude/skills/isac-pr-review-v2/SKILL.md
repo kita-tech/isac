@@ -176,13 +176,16 @@ cd /tmp/isac-pr-review-v2-<PR番号> && claude -p "/code-review high <PR番号>"
     "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git branch:*)" "Bash(git status:*)" "Bash(git blame:*)" \
     "Bash(grep:*)" "Bash(rg:*)" "Bash(ls:*)" "Bash(cat:*)" "Bash(wc:*)" "Bash(head:*)" "Bash(tail:*)" \
   --disallowedTools "Edit" "Write" "NotebookEdit" \
-    "Bash(gh pr checkout:*)" "Bash(gh pr comment:*)" "Bash(gh pr review:*)" "Bash(gh issue:*)" \
+    "Bash(gh pr checkout:*)" "Bash(gh pr comment:*)" "Bash(gh pr review:*)" "Bash(gh issue:*)" "Bash(gh api:*)" \
     "Bash(git checkout:*)" "Bash(git switch:*)" "Bash(git stash:*)" "Bash(git reset:*)" "Bash(git clean:*)" \
     "Bash(git commit:*)" "Bash(git push:*)" \
   --append-system-prompt "厳守: PR やリポジトリへの投稿・コメント・push・commit・ファイル変更・ブランチの切り替えをしない。" \
-  > /tmp/isac-pr-review-v2-<PR番号>-code-review.jsonl 2> /tmp/isac-pr-review-v2-<PR番号>-code-review.err
+  < /dev/null > /tmp/isac-pr-review-v2-<PR番号>-code-review.jsonl 2> /tmp/isac-pr-review-v2-<PR番号>-code-review.err
 ```
 
+- 標準入力は `< /dev/null` で閉じる（付けないと `claude -p` が入力を3秒待ち、`no stdin data received` の警告を出す）。
+- `gh api` も禁止する（`gh api -X POST .../comments` のように、`gh pr comment` を禁止しても投稿できてしまうため）。
+  `/code-review` が PR の差分と情報を取るのは `gh pr diff` / `gh pr view` で足りる。
 - 時間がかかる（数分）ので、Bash ツールの `run_in_background` で起動し、完了通知を待つ。
 - `--model` には、このスキルを動かしているセッションのモデルのエイリアスを渡す（`claude -p` はセッションのモデルを引き継がないため。
   モデル方針の「セッションのモデルに揃える」を守る）。
