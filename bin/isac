@@ -446,6 +446,7 @@ SECRETS_EOF
     # .claude/ ディレクトリの自動作成
     # ========================================
     local create_claude_dir=false
+    local resync_claude_dir=false
 
     if [ ! -d ".claude" ]; then
         echo ""
@@ -465,6 +466,10 @@ SECRETS_EOF
         create_claude_dir=true
         echo ""
         echo -e "${YELLOW}Force mode: Recreating .claude/ configuration${NC}"
+    else
+        # 既存プロジェクトへの再実行: 新しく増えたスキル等のリンク追加と permissions のマージだけを行う
+        # （非破壊。MCP の再登録は従来どおり行わない）
+        resync_claude_dir=true
     fi
 
     if [ "${create_claude_dir}" = true ]; then
@@ -475,6 +480,8 @@ SECRETS_EOF
         else
             setup_mcp_servers "${flag_force}"
         fi
+    elif [ "${resync_claude_dir}" = true ]; then
+        setup_claude_directory false
     fi
 
     echo ""
@@ -785,6 +792,70 @@ create_settings_json() {
 }
 
 
+# ~/.isac/ の項目へのシンボリックリンクを、プロジェクトの .claude/<種類>/ に非破壊で同期する
+# 引数: label src_dir dest_dir kind(file|dir) glob force
+#   - src にあって dest に無い項目 → リンクを追加
+#   - dest のリンクが src の同名項目を指している → そのまま
+#   - dest のリンクが src 内の消えた項目を指している（リンク切れ）→ 削除（ISAC が張ったリンクの後始末）
+#   - dest のリンクが別の場所を指している → 既定は残して警告、--force 時は張り替え（リンクのみで実体は消えない）
+#   - dest に同名の実ファイル/ディレクトリがある → --force でも削除せず警告（プロジェクト独自のものを守る）
+#   - src に無いリンク以外の項目（独自スキル等）→ 触らない
+sync_isac_links() {
+    local label="$1" src="$2" dest="$3" kind="$4" glob="$5" force="$6"
+    local added=0 linked=0 relinked=0 removed=0 skipped=0
+    local entry target item name path
+
+    mkdir -p "${dest}"
+
+    # 1. src 内の消えた項目を指すリンク切れを掃除する
+    for entry in "${dest}"/* "${dest}"/.[!.]*; do
+        [ -L "${entry}" ] || continue
+        [ -e "${entry}" ] && continue
+        target=$(readlink "${entry}")
+        target="${target%/}"
+        case "${target}" in
+            "${src}"/*)
+                rm -f "${entry}"
+                removed=$((removed + 1))
+                ;;
+        esac
+    done
+
+    # 2. src の各項目へのリンクを張る
+    for item in "${src}"/${glob}; do
+        if [ "${kind}" = "dir" ]; then
+            [ -d "${item}" ] || continue
+        else
+            [ -f "${item}" ] || continue
+        fi
+        name=$(basename "${item}")
+        path="${dest}/${name}"
+
+        if [ -L "${path}" ]; then
+            target=$(readlink "${path}")
+            target="${target%/}"
+            if [ "${target}" = "${item}" ]; then
+                linked=$((linked + 1))
+            elif [ "${force}" = true ]; then
+                rm -f "${path}"
+                ln -s "${item}" "${path}"
+                relinked=$((relinked + 1))
+            else
+                echo -e "  ${YELLOW}⚠${NC} ${label}/${name}: 別の場所へのリンクのため残しました（${target}）。張り替えるには --force"
+                skipped=$((skipped + 1))
+            fi
+        elif [ -e "${path}" ]; then
+            echo -e "  ${YELLOW}⚠${NC} ${label}/${name}: リンクではない同名の項目があるため残しました。ISAC 版を使うには手動で移動・削除してください"
+            skipped=$((skipped + 1))
+        else
+            ln -s "${item}" "${path}"
+            added=$((added + 1))
+        fi
+    done
+
+    echo -e "  ${GREEN}✓${NC} ${label}: ${added} added, $((linked + relinked)) up to date$([ "${relinked}" -gt 0 ] && echo " (${relinked} relinked)"), ${removed} stale removed, ${skipped} skipped"
+}
+
 # .claude/ ディレクトリのセットアップ
 setup_claude_directory() {
     local force="${1:-false}"
@@ -799,6 +870,11 @@ setup_claude_directory() {
     # settings.json の作成
     # ========================================
     if [ ! -f ".claude/settings.json" ] || [ "${force}" = true ]; then
+        # --force で既存 settings.json を作り直す前に退避する（プロジェクト独自の設定を失わないため）
+        if [ -f ".claude/settings.json" ]; then
+            cp -p ".claude/settings.json" ".claude/settings.json.isac-bak"
+            echo -e "  ${YELLOW}⚠${NC} Backed up existing settings to .claude/settings.json.isac-bak"
+        fi
         create_settings_json
     else
         # 既存プロジェクトを壊さずに ISAC の許可設定だけ追記する（再initで治癒）
@@ -819,104 +895,49 @@ setup_claude_directory() {
     echo -e "  ${GREEN}✓${NC} .claude/settings.json ready"
 
     # ========================================
-    # シンボリックリンクの作成
+    # シンボリックリンクの同期（非破壊）
     # ========================================
+    # ~/.isac/ の各項目へのリンクを張る。既存プロジェクトへの再実行では、足りないリンクの追加と
+    # 消えた ISAC 項目を指すリンク切れの削除だけを行い、リンクでない実ファイル・ディレクトリ
+    # （プロジェクト独自のスキル等）は --force でも削除しない（sync_isac_links 参照）。
 
-    # グローバル設定が存在するか確認
     if [ ! -d "${ISAC_GLOBAL_DIR}/hooks" ]; then
         echo -e "  ${YELLOW}⚠${NC} Global hooks not found (~/.isac/hooks/)"
         echo "     Run 'isac install' first to set up global configuration."
     else
-        # 既存のリンク/ファイルを削除して新しいリンクを作成
-        rm -rf .claude/hooks/*
-
-        # 各Hookファイルへのシンボリックリンクを作成
-        for hook_file in "${ISAC_GLOBAL_DIR}/hooks/"*.sh; do
-            if [ -f "${hook_file}" ]; then
-                local filename
-                filename=$(basename "${hook_file}")
-                ln -sf "${hook_file}" ".claude/hooks/${filename}"
-            fi
-        done
-
-        local hook_count
-        hook_count=$(ls -1 .claude/hooks/*.sh 2>/dev/null | wc -l | tr -d ' ')
-        echo -e "  ${GREEN}✓${NC} Linked ${hook_count} hooks from ~/.isac/hooks/"
+        sync_isac_links "hooks" "${ISAC_GLOBAL_DIR}/hooks" ".claude/hooks" "file" "*.sh" "${force}"
     fi
 
     if [ ! -d "${ISAC_GLOBAL_DIR}/skills" ]; then
         echo -e "  ${YELLOW}⚠${NC} Global skills not found (~/.isac/skills/)"
         echo "     Run 'isac install' first to set up global configuration."
-    else
+    elif git ls-files --error-unmatch .claude/skills/ >/dev/null 2>&1; then
         # Git管理されたスキルファイルがある場合はシンボリックリンク作成をスキップ
-        if git ls-files --error-unmatch .claude/skills/ >/dev/null 2>&1; then
-            local skill_count
-            skill_count=$(ls -1d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
-            echo -e "  ${GREEN}✓${NC} Skills: ${skill_count} Git-managed skills (skipped symlink)"
-        else
-            # 既存のリンク/ファイルを削除して新しいリンクを作成
-            rm -rf .claude/skills/*
-
-            # 各Skillディレクトリへのシンボリックリンクを作成
-            for skill_dir in "${ISAC_GLOBAL_DIR}/skills/"*/; do
-                if [ -d "${skill_dir}" ]; then
-                    local dirname
-                    dirname=$(basename "${skill_dir}")
-                    ln -sf "${skill_dir}" ".claude/skills/${dirname}"
-                fi
-            done
-
-            local skill_count
-            skill_count=$(ls -1d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
-            echo -e "  ${GREEN}✓${NC} Linked ${skill_count} skills from ~/.isac/skills/"
-        fi
+        local skill_count
+        skill_count=$(ls -1d .claude/skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+        echo -e "  ${GREEN}✓${NC} Skills: ${skill_count} Git-managed skills (skipped symlink)"
+    else
+        sync_isac_links "skills" "${ISAC_GLOBAL_DIR}/skills" ".claude/skills" "dir" "*" "${force}"
     fi
 
-    # Agentsシンボリックリンク
     if [ ! -d "${ISAC_GLOBAL_DIR}/agents" ]; then
         echo -e "  ${YELLOW}⚠${NC} Global agents not found (~/.isac/agents/)"
         echo "     Run 'isac install' first to set up global configuration."
     else
-        # 既存のリンク/ファイルを削除して新しいリンクを作成
-        rm -rf .claude/agents/*
-
-        # 各Agentファイルへのシンボリックリンクを作成
-        for agent_file in "${ISAC_GLOBAL_DIR}/agents/"*.md; do
-            if [ -f "${agent_file}" ]; then
-                local filename
-                filename=$(basename "${agent_file}")
-                ln -sf "${agent_file}" ".claude/agents/${filename}"
-            fi
-        done
-
-        local agent_count
-        agent_count=$(ls -1 .claude/agents/*.md 2>/dev/null | wc -l | tr -d ' ')
-        echo -e "  ${GREEN}✓${NC} Linked ${agent_count} agents from ~/.isac/agents/"
+        sync_isac_links "agents" "${ISAC_GLOBAL_DIR}/agents" ".claude/agents" "file" "*.md" "${force}"
     fi
 
-    # Workflowsシンボリックリンク（マルチエージェント Workflow スクリプト）
+    # Workflows（マルチエージェント Workflow スクリプト）
     if [ ! -d "${ISAC_GLOBAL_DIR}/workflows" ]; then
         echo -e "  ${YELLOW}⚠${NC} Global workflows not found (~/.isac/workflows/)"
         echo "     Run 'isac install' first to set up global configuration."
-    else
+    elif git ls-files --error-unmatch .claude/workflows/ >/dev/null 2>&1; then
         # Git管理された workflows がある場合はシンボリックリンク作成をスキップ（skills と同様）
-        if git ls-files --error-unmatch .claude/workflows/ >/dev/null 2>&1; then
-            local wf_count
-            wf_count=$(ls -1 .claude/workflows/*.js 2>/dev/null | wc -l | tr -d ' ')
-            echo -e "  ${GREEN}✓${NC} Workflows: ${wf_count} Git-managed workflows (skipped symlink)"
-        else
-            rm -rf .claude/workflows/*
-            for wf_file in "${ISAC_GLOBAL_DIR}/workflows/"*.js; do
-                if [ -f "${wf_file}" ]; then
-                    local filename
-                    filename=$(basename "${wf_file}")
-                    ln -sf "${wf_file}" ".claude/workflows/${filename}"
-                fi
-            done
-            local wf_count
-            wf_count=$(ls -1 .claude/workflows/*.js 2>/dev/null | wc -l | tr -d ' ')
-            echo -e "  ${GREEN}✓${NC} Linked ${wf_count} workflows from ~/.isac/workflows/"
-        fi
+        local wf_count
+        wf_count=$(ls -1 .claude/workflows/*.js 2>/dev/null | wc -l | tr -d ' ')
+        echo -e "  ${GREEN}✓${NC} Workflows: ${wf_count} Git-managed workflows (skipped symlink)"
+    else
+        sync_isac_links "workflows" "${ISAC_GLOBAL_DIR}/workflows" ".claude/workflows" "file" "*.js" "${force}"
     fi
 
     # ========================================
@@ -930,7 +951,7 @@ setup_claude_directory() {
     echo "  .claude/workflows/"
     echo ""
     echo "  These are symlinks to your local ~/.isac/ directory."
-    echo "  Team members should run 'isac init --force' to create their own links."
+    echo "  Team members should run 'isac init' to create their own links."
 }
 
 # 状態表示

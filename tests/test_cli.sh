@@ -1193,6 +1193,140 @@ cd "$SCRIPT_DIR"
 echo ""
 
 # ========================================
+# テスト19.6: 既存プロジェクトへの再 init（リンクの非破壊同期）
+# ========================================
+# 偽の ISAC_GLOBAL_DIR を使い、実際の ~/.isac には触れない。
+# MCP 再登録（--force 時）が実環境の ~/.claude.json を変えないよう API キーの環境変数を外して実行する。
+echo -e "${BLUE}テスト19.6: 既存プロジェクトへの再 init（リンクの非破壊同期）${NC}"
+echo "----------------------------------------"
+
+FAKE_GLOBAL=$(mktemp -d)
+mkdir -p "$FAKE_GLOBAL"/{hooks,skills,agents,workflows}
+for s in isac-alpha "isac beta"; do mkdir -p "$FAKE_GLOBAL/skills/$s"; echo "# $s" > "$FAKE_GLOBAL/skills/$s/SKILL.md"; done
+echo '#!/bin/bash' > "$FAKE_GLOBAL/hooks/on-prompt.sh"
+echo '# agent' > "$FAKE_GLOBAL/agents/memory-searcher.md"
+echo "export const meta = {}" > "$FAKE_GLOBAL/workflows/isac-wf-a.js"
+
+run_init() {
+    env -u NOTION_API_TOKEN -u CONTEXT7_API_KEY ISAC_GLOBAL_DIR="$FAKE_GLOBAL" "$ISAC_CMD" init "relink-test" --yes "$@" 2>&1
+}
+
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+run_init >/dev/null    # 初回（.claude/ 新規作成）
+
+# プロジェクト独自の実ディレクトリ・実ファイルを置く
+mkdir -p ".claude/skills/my-custom-skill" ".claude/skills/custom skill 日本語"
+echo "# custom" > ".claude/skills/my-custom-skill/SKILL.md"
+echo "# custom2" > ".claude/skills/custom skill 日本語/SKILL.md"
+echo '#!/bin/bash' > ".claude/hooks/my-hook.sh"
+# ISAC に新しいスキル・workflow が増えた状況を作る
+mkdir -p "$FAKE_GLOBAL/skills/isac-new-skill"; echo "# new" > "$FAKE_GLOBAL/skills/isac-new-skill/SKILL.md"
+echo "export const meta = {}" > "$FAKE_GLOBAL/workflows/isac-wf-new.js"
+# ISAC から消えたスキル（リンク切れになる）
+rm -rf "$FAKE_GLOBAL/skills/isac-alpha"
+# ISAC 管理外を指すリンク切れ（触らない対象）
+ln -s "/nonexistent/elsewhere" ".claude/skills/foreign-broken"
+
+OUTPUT=$(run_init)
+
+# 19.6-1. 新しく増えたスキル・workflow のリンクが追加される（--force なし）
+if [ -L ".claude/skills/isac-new-skill" ] && [ -f ".claude/skills/isac-new-skill/SKILL.md" ] \
+   && [ -L ".claude/workflows/isac-wf-new.js" ]; then
+    test_pass "再 init で新しいスキル・workflow のリンクが追加される"
+else
+    test_fail "再 init のリンク追加" "Output: $OUTPUT"
+fi
+
+# 19.6-2. 空白を含む名前の ISAC スキルもリンクされる
+if [ -L ".claude/skills/isac beta" ] && [ -f ".claude/skills/isac beta/SKILL.md" ]; then
+    test_pass "空白を含む名前のスキルもリンクされる"
+else
+    test_fail "空白を含むスキル名" "'.claude/skills/isac beta' が無い"
+fi
+
+# 19.6-3. プロジェクト独自のスキル・hook（実体）は残る
+if [ -f ".claude/skills/my-custom-skill/SKILL.md" ] && [ ! -L ".claude/skills/my-custom-skill" ] \
+   && [ -f ".claude/skills/custom skill 日本語/SKILL.md" ] && [ -f ".claude/hooks/my-hook.sh" ]; then
+    test_pass "再 init でプロジェクト独自のスキル・hook が消えない"
+else
+    test_fail "独自スキルの保護" "独自のスキル/hook が消えた"
+fi
+
+# 19.6-4. ISAC から消えた項目を指すリンク切れは削除、管理外のリンク切れは残す
+if [ ! -e ".claude/skills/isac-alpha" ] && [ ! -L ".claude/skills/isac-alpha" ] && [ -L ".claude/skills/foreign-broken" ]; then
+    test_pass "ISAC 由来のリンク切れだけを削除し、管理外のリンクは残す"
+else
+    test_fail "リンク切れの掃除" "isac-alpha 残存 or foreign-broken 消失"
+fi
+
+# 19.6-5. 再 init で settings.json に permissions がマージされる（既存プロジェクトの治癒）
+jq 'del(.permissions) | .userCustom = "keep-me"' .claude/settings.json > .claude/_s.json && mv .claude/_s.json .claude/settings.json
+run_init >/dev/null
+if jq -e '.permissions.allow | index("Bash(git:*)")' .claude/settings.json >/dev/null 2>&1 \
+   && jq -e '.userCustom == "keep-me"' .claude/settings.json >/dev/null 2>&1; then
+    test_pass "再 init で既存 settings.json に permissions がマージされる（独自キー保持）"
+else
+    test_fail "再 init の permissions マージ" "permissions が無い or 独自キー消失"
+fi
+
+# 19.6-6. 冪等: もう一度実行してもリンク構成が変わらない
+BEFORE=$(cd .claude && find . | LC_ALL=C sort)
+OUTPUT2=$(run_init)
+AFTER=$(cd .claude && find . | LC_ALL=C sort)
+if [ "$BEFORE" = "$AFTER" ] && echo "$OUTPUT2" | grep -q "skills: 0 added"; then
+    test_pass "再 init は冪等（2回目は追加なし・構成不変）"
+else
+    test_fail "再 init の冪等性" "構成が変化 or 追加が発生"
+fi
+
+# 19.6-7. ISAC と同名の実ディレクトリは --force でも消さず警告する
+rm -f ".claude/skills/isac-new-skill"
+mkdir -p ".claude/skills/isac-new-skill"; echo "# local copy" > ".claude/skills/isac-new-skill/SKILL.md"
+OUTPUT=$(run_init --force)
+if grep -q "local copy" ".claude/skills/isac-new-skill/SKILL.md" 2>/dev/null && [ ! -L ".claude/skills/isac-new-skill" ] \
+   && echo "$OUTPUT" | grep -q "isac-new-skill: リンクではない同名の項目"; then
+    test_pass "同名の実ディレクトリは --force でも残し、警告を出す"
+else
+    test_fail "同名実ディレクトリの保護" "Output: $OUTPUT"
+fi
+
+# 19.6-8. --force でもプロジェクト独自のスキルは残る
+if [ -f ".claude/skills/my-custom-skill/SKILL.md" ] && [ -f ".claude/hooks/my-hook.sh" ]; then
+    test_pass "--force でもプロジェクト独自のスキル・hook が消えない"
+else
+    test_fail "--force 時の独自スキル保護" "独自のスキル/hook が消えた"
+fi
+
+# 19.6-9. --force は settings.json を作り直す前に .isac-bak に退避する
+if [ -f ".claude/settings.json.isac-bak" ] && jq -e '.userCustom == "keep-me"' ".claude/settings.json.isac-bak" >/dev/null 2>&1; then
+    test_pass "--force は既存 settings.json を settings.json.isac-bak に退避する"
+else
+    test_fail "settings.json の退避" "settings.json.isac-bak が無い or 内容が違う"
+fi
+
+# 19.6-10. 別の場所を指すリンク: 既定は残して警告、--force で張り替え
+OTHER=$(mktemp -d)
+rm -f ".claude/workflows/isac-wf-a.js"; ln -s "$OTHER/custom.js" ".claude/workflows/isac-wf-a.js"; touch "$OTHER/custom.js"
+OUTPUT=$(run_init)
+if [ "$(readlink ".claude/workflows/isac-wf-a.js")" = "$OTHER/custom.js" ] && echo "$OUTPUT" | grep -q "isac-wf-a.js: 別の場所へのリンク"; then
+    test_pass "別の場所を指すリンクは既定で残し、警告を出す"
+else
+    test_fail "別の場所を指すリンク（既定）" "Output: $OUTPUT"
+fi
+run_init --force >/dev/null
+if [ "$(readlink ".claude/workflows/isac-wf-a.js")" = "$FAKE_GLOBAL/workflows/isac-wf-a.js" ] && [ -f "$OTHER/custom.js" ]; then
+    test_pass "--force で別の場所を指すリンクを張り替える（リンク先の実体は消さない）"
+else
+    test_fail "別の場所を指すリンク（--force）" "張り替えられない or 実体が消えた"
+fi
+
+cd "$SCRIPT_DIR"
+rm -rf "$TEST_DIR" "$FAKE_GLOBAL" "$OTHER"
+
+echo ""
+
+# ========================================
 # クリーンアップ
 # ========================================
 rm -f "$_LOAD_SECRETS_FUNC_FILE" 2>/dev/null

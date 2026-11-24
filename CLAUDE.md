@@ -144,7 +144,7 @@ isac/
 ```bash
 isac install            # グローバルインストール
 isac update             # グローバル設定を更新
-isac init               # プロジェクト初期化
+isac init               # プロジェクト初期化（既存プロジェクトで再実行すると、増えたスキル等のリンク追加と許可設定のマージだけを非破壊で行う）
 isac status             # 状態表示（バージョン情報含む）
 isac status --no-cache  # キャッシュを使わず最新情報を取得
 isac projects           # プロジェクト一覧
