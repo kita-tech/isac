@@ -185,6 +185,26 @@ await test('実行ポリシー: 既定は実行禁止 / allow_exec=true のみ�
   assert.doesNotMatch(deny, /127\.0\.0\.1/)   // 実行なしのときはスタブの話を出さない
   assert.match(allow, /【禁止】/)   // 実行許可時も書き込み・投稿等の禁止は残る
 })
+await test('作業場所: worktree があれば絶対パスで読み git -C を使う指示が Review と Verify の両方に入る。作業中のブランチを変える操作は禁止', async () => {
+  const wt = '/tmp/isac-pr-review-v2-7'
+  const h = reviewsOf({ 'セキュリティ設計/運用リスク': [F({ severity: 'high' })] }, () => OK)
+  for (const allow_exec of [true, undefined]) {
+    const { calls } = await run({ ...BASE, worktree_path: wt, allow_exec }, h)
+    const review = calls.find((c) => c.opts.label.startsWith('REV:'))
+    const verify = calls.find((c) => c.opts.label.startsWith('VERIFY'))
+    for (const c of [review, verify]) {
+      assert.match(c.prompt, /【作業場所（厳守）】/)
+      assert.ok(c.prompt.includes(`${wt}/...`), '絶対パスで読む指示')
+      assert.ok(c.prompt.includes(`git -C ${wt}`), 'git -C の指示')
+      assert.match(c.prompt, /起動時のカレントディレクトリは、レビューしている人の作業中のリポジトリ/)
+      assert.match(c.prompt, /commit\/push\/checkout\/switch\/stash\/reset\/clean\/merge\/rebase/)
+      assert.match(c.prompt, /gh pr checkout を含む/)
+    }
+  }
+  const { calls } = await run(BASE, () => ({ findings: [] }))   // worktree 無しなら作業場所の指示は出さない
+  assert.doesNotMatch(calls[0].prompt, /【作業場所（厳守）】/)
+  assert.match(calls[0].prompt, /switch\/stash\/reset/)   // 禁止事項は worktree の有無に関係なく入る
+})
 
 // ---------- A3: 重複排除 ----------
 await test('同一 file の近接行(差3以内)は統合、差4・別file・行不明(0)は統合しない', async () => {

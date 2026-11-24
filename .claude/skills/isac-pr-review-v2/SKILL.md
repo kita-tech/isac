@@ -63,8 +63,11 @@ v2 は **Claude Code 組み込みの `/code-review` を先に実行し、その�
 - `git` が利用可能であること（worktree の作成に使う）
 - **レビューする PR のリポジトリをカレントディレクトリにして実行すること。** 手順1の `gh pr view <PR番号>`、手順2の `git fetch origin`、
   手順4の `/code-review` は、どれもカレントのリポジトリに対して動く。PR の URL で別のリポジトリを指しても、手順がそのリポジトリに向くわけではない
-  （別のリポジトリのディレクトリで作業しているときは、`gh` に `-R <owner>/<repo>` を付け、`git` はそのリポジトリで実行し、
-  `/code-review` はそのリポジトリ（手順2の worktree）の中でヘッドレス実行する）
+  （別のリポジトリのディレクトリで作業しているときは、`gh` に `-R <owner>/<repo>` を付け、`git` はそのリポジトリで実行する）
+- `claude` CLI が使えること（手順4で `/code-review` を worktree の中でヘッドレス実行する）
+- **カレントブランチ（レビューする人の作業中のブランチ）は汚さない。** PR のコードは手順2の worktree にだけ取り出し、作業中のディレクトリを
+  PR のブランチに切り替えない（`gh pr checkout` / `git switch` / `git checkout` / `git stash` などを使わない）。PR のコードを読む・動かすのは
+  すべて worktree の中で行い、手順8で作業中のリポジトリが変わっていないことを確かめる
 
 ## 重要度の定義
 
@@ -101,16 +104,27 @@ gh api repos/{owner}/{repo}/issues/<PR番号>/comments
 workflow に渡す `context` の先頭に「この PR はマージ済み（または close 済み）」と書き、レポートのヘッダーにも
 「マージ済み: 指摘は追従 PR で対応するもの」と明記する（マージ前の修正依頼のように読ませない）。
 
-### 2. worktree の構築（周辺コードの参照用）
+### 2. worktree の構築（PR のコードはここだけに置く）
 
 v1 と同時に走らせても衝突しないよう、パスとブランチ名は v1 と別にしてある。
 
+まず、作業中のリポジトリの状態（ブランチ・HEAD・未コミットの変更）を記録する。手順8で、レビューの前後で変わっていないかを比べるため。
+
 ```bash
+{ git branch --show-current; git rev-parse HEAD; git status --porcelain; } > /tmp/isac-pr-review-v2-<PR番号>-repo-before.txt
+```
+
+前回のレビューの残り（同じ番号の worktree・ブランチ）があれば先に片付けてから、PR のコードを worktree に取り出す。
+`git fetch` は `pr-review-v2-<PR番号>` という参照を作るだけで、作業中のブランチやファイルには触れない。
+
+```bash
+git worktree remove /tmp/isac-pr-review-v2-<PR番号> --force 2>/dev/null; git branch -D pr-review-v2-<PR番号> 2>/dev/null
 git fetch origin pull/<PR番号>/head:pr-review-v2-<PR番号>
 git worktree add /tmp/isac-pr-review-v2-<PR番号> pr-review-v2-<PR番号>
 ```
 
-作成に失敗した場合は worktree なしで続行する（`worktree_path` を渡さない）。
+作成に失敗した場合は worktree なしで続行する（`worktree_path` を渡さない）。このときも作業中のディレクトリを PR のブランチに切り替えない。
+レンズは差分の範囲だけで判断し、手順4の `/code-review` は実施しない（行単位のバグ探しは未実施と明記する）。
 
 ### 3. 実行可否の判定
 
@@ -121,9 +135,11 @@ git worktree add /tmp/isac-pr-review-v2-<PR番号> pr-review-v2-<PR番号>
 
 | PR | 既定 | やること |
 |----|------|----------|
-| 同一リポジトリの PR（`false`） | 実行あり | `allow_exec: true` を渡す。`/code-review` もそのまま実行する |
-| fork からの PR（`true`） | 実行なし | `allow_exec` を渡さない。**`/code-review` は手元でコードを実行しうる**ので、実行する前にその旨をユーザーに伝えて了承を得る。了承が無ければ `/code-review` を飛ばし、レポートに「行単位のバグ探しは未実施」と明記する |
-| `--no-exec` 指定 | 実行なし | `allow_exec` を渡さない。`/code-review` の扱いは fork の場合と同じ |
+| 同一リポジトリの PR（`false`） | 実行あり | `allow_exec: true` を渡す |
+| fork からの PR（`true`） | 実行なし | `allow_exec` を渡さない |
+| `--no-exec` 指定 | 実行なし | `allow_exec` を渡さない |
+
+`/code-review` はどの場合も、手順4のとおり worktree の中で読み取り系のツールだけを許して動かす（コードを実行させない）。
 
 実行ありのとき、エージェントが動かしてよいのは worktree の中だけ。外部サービス・共有や本番の DB・課金や通知の API に届く処理、
 DB マイグレーションの適用、デプロイ、パッケージのインストール、長時間かかる全体テストは実行しない（workflow のプロンプトに明記してある）。
@@ -147,14 +163,40 @@ DB マイグレーションの適用、デプロイ、パッケージのイン�
 
 ### 4. `/code-review` の実行（行単位のバグ探し）
 
-Skill ツールで組み込みの `code-review` を呼ぶ。引数は `high <PR番号>`（エフォート high・対象は PR）。
-`--comment` / `--fix` / `--post` は**付けない**（投稿は手順7で、このスキルがまとめて行う）。
+**Skill ツールでは呼ばない。** Skill ツールの `/code-review` は今のセッションのディレクトリ（作業中のブランチ）で動き、周辺のコードを
+相対パスで読む（実測: `sed -n 1,140p <相対パス>` のように読んでいた）。そのままだと PR ではなく作業中のブランチのコードを読み、
+作業中のディレクトリでコマンドを動かすことにもなる。そこで、手順2の worktree の中で `claude -p` を使ってヘッドレス実行する。
 
-- バックグラウンドで起動した場合は完了通知を待つ。
-- 返ってきた結果（findings の一覧と総評）を、**そのまま** `/tmp/isac-pr-review-v2-<PR番号>-code-review.txt` に保存する
-  （要約しない・件数を減らさない）。結果は長い（数千文字）ので、書き写さずに取り出す:
-  完了通知に実行ログのパス（`output-file`）が付いていれば、そのログから最後の応答テキストを取り出して保存する。
-  ログが無い場合に限り、通知に載っている結果を Write ツールで保存する。保存後、件数が通知の内容と合っているか確かめる。
+```bash
+cd /tmp/isac-pr-review-v2-<PR番号> && claude -p "/code-review high <PR番号>" \
+  --model <セッションのモデルのエイリアス（例: opus）> \
+  --output-format stream-json --verbose \
+  --allowedTools "Read" "Grep" "Glob" \
+    "Bash(gh pr diff:*)" "Bash(gh pr view:*)" \
+    "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git branch:*)" "Bash(git status:*)" "Bash(git blame:*)" \
+    "Bash(grep:*)" "Bash(rg:*)" "Bash(ls:*)" "Bash(cat:*)" "Bash(wc:*)" "Bash(head:*)" "Bash(tail:*)" \
+  --disallowedTools "Edit" "Write" "NotebookEdit" \
+    "Bash(gh pr checkout:*)" "Bash(gh pr comment:*)" "Bash(gh pr review:*)" "Bash(gh issue:*)" \
+    "Bash(git checkout:*)" "Bash(git switch:*)" "Bash(git stash:*)" "Bash(git reset:*)" "Bash(git clean:*)" \
+    "Bash(git commit:*)" "Bash(git push:*)" \
+  --append-system-prompt "厳守: PR やリポジトリへの投稿・コメント・push・commit・ファイル変更・ブランチの切り替えをしない。" \
+  > /tmp/isac-pr-review-v2-<PR番号>-code-review.jsonl 2> /tmp/isac-pr-review-v2-<PR番号>-code-review.err
+```
+
+- 時間がかかる（数分）ので、Bash ツールの `run_in_background` で起動し、完了通知を待つ。
+- `--model` には、このスキルを動かしているセッションのモデルのエイリアスを渡す（`claude -p` はセッションのモデルを引き継がないため。
+  モデル方針の「セッションのモデルに揃える」を守る）。
+- `--comment` / `--fix` / `--post` は**付けない**（投稿は手順7で、このスキルがまとめて行う）。
+- 結果（findings の一覧と総評）は、ログの `type: "result"` の行の `result` にある。これを**そのまま**
+  `/tmp/isac-pr-review-v2-<PR番号>-code-review.txt` に取り出す（要約しない・件数を減らさない。書き写さない）:
+
+  ```bash
+  python3 -I -c 'import json,sys
+  r=[json.loads(l) for l in open(sys.argv[1]) if l.strip().startswith("{")]
+  t=[d.get("result","") for d in r if d.get("type")=="result"]
+  open(sys.argv[2],"w").write(t[-1] if t else "")' \
+    /tmp/isac-pr-review-v2-<PR番号>-code-review.jsonl /tmp/isac-pr-review-v2-<PR番号>-code-review.txt
+  ```
 - `/code-review` が使えない・失敗した場合は、その旨をユーザーに伝えたうえで手順5に進む（`known_findings_path` を渡さない）。
   このときレポートには **「行単位のバグ探しは未実施」と必ず明記する**（レンズはバグ探しを主目的にしていないため）。
 
@@ -285,8 +327,21 @@ gh pr comment <PR番号> --body-file /tmp/isac-pr-review-v2-<PR番号>-comment.m
 ```bash
 git worktree remove /tmp/isac-pr-review-v2-<PR番号> --force
 git branch -D pr-review-v2-<PR番号>
-rm -f /tmp/isac-pr-review-v2-<PR番号>-comment.md /tmp/isac-pr-review-v2-<PR番号>.diff /tmp/isac-pr-review-v2-<PR番号>-code-review.txt
+rm -f /tmp/isac-pr-review-v2-<PR番号>-comment.md /tmp/isac-pr-review-v2-<PR番号>.diff /tmp/isac-pr-review-v2-<PR番号>-code-review.txt \
+      /tmp/isac-pr-review-v2-<PR番号>-code-review.jsonl /tmp/isac-pr-review-v2-<PR番号>-code-review.err
 ```
+
+最後に、作業中のリポジトリがレビューの前後で変わっていないかを確かめる（手順2で記録した状態と比べる）。
+
+```bash
+{ git branch --show-current; git rev-parse HEAD; git status --porcelain; } > /tmp/isac-pr-review-v2-<PR番号>-repo-after.txt
+diff /tmp/isac-pr-review-v2-<PR番号>-repo-before.txt /tmp/isac-pr-review-v2-<PR番号>-repo-after.txt \
+  && echo "作業中のリポジトリは変わっていない"
+rm -f /tmp/isac-pr-review-v2-<PR番号>-repo-before.txt /tmp/isac-pr-review-v2-<PR番号>-repo-after.txt
+```
+
+差分が出たら、**元に戻そうとせず**、変わった内容（ブランチ・HEAD・ファイル）をそのままユーザーに伝える
+（レビュー中にユーザー自身が作業した変更かもしれないため。勝手に reset / checkout しない）。
 
 ## v1 との比較のしかた
 
