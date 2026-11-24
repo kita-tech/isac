@@ -14,7 +14,7 @@
 
 export const meta = {
   name: 'isac-review-dialectic',
-  description: '弁証法レビュー: 選択肢ごとにadvocate割当→steelman→相互反駁→独立ジャッジ。投票せず両案の最強ケースを保証',
+  description: '【内部用・直接呼ばない】/isac-review --dialectic から呼ばれる部品。意思決定のレビューは /isac-review --dialectic を使うこと。中身: 選択肢ごとにadvocate割当→steelman→相互反駁→独立ジャッジ(JSON)',
   phases: [
     { title: 'Advocate', detail: '選択肢ごとに steelman(全力擁護)' },
     { title: 'Rebut', detail: '他案の最強ケースへ相互反駁(red/blue)' },
