@@ -474,11 +474,14 @@ PR作成は実装エージェント（オーケストレーター）自身が行
 
 1. **ブランチは Phase 1.5 で作成済み**（フォールバック時はここで作成: `git checkout -b "autopilot/..."`）
 2. コミット作成（Co-Authored-By 付き）
-3. リモートに push: `git push -u origin "$(git branch --show-current)"`
-4. Draft PR作成: `gh pr create --draft`
-5. **PR本文に設計ドキュメントとテスト結果を含める**（Phase 1の設計内容を記載）
-6. **Phase 4 のレビュー結果を `gh pr comment` で投稿**
-7. **Worktree クリーンアップ**（worktree 使用時のみ）:
+3. **PR に入るコミットを確認**: `git fetch origin && git log --oneline origin/main..HEAD`
+   - 今回の作業で作ったコミット以外が含まれていたら、push・PR作成をせず人間に報告する
+     （無関係な変更がレビューの目に入らないまま main に入るのを防ぐ。CLAUDE.md「PR作成前チェックリスト」）
+4. リモートに push: `git push -u origin "$(git branch --show-current)"`
+5. Draft PR作成: `gh pr create --draft`
+6. **PR本文に設計ドキュメントとテスト結果を含める**（Phase 1の設計内容を記載）
+7. **Phase 4 のレビュー結果を `gh pr comment` で投稿**
+8. **Worktree クリーンアップ**（worktree 使用時のみ）:
    ```bash
    cd "$ORIGINAL_DIR"
    git worktree remove "$WORKTREE_DIR" --force
@@ -842,7 +845,7 @@ Co-Authored-By: Claude {実行モデル名} <noreply@anthropic.com>
 手動での確認・修正をお願いします。
 ```
 
-**注意**: 失敗時も Worktree のクリーンアップ（Phase 5 の手順7）を実行すること。PR作成前でも、コミット・push 後にクリーンアップを行う。
+**注意**: 失敗時も Worktree のクリーンアップ（Phase 5 の手順8）を実行すること。PR作成前でも、コミット・push 後にクリーンアップを行う。
 
 ---
 

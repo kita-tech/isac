@@ -487,6 +487,10 @@ gh pr create --title "Add [hook-name] hook" --body "..."
 - [ ] テストが全て通過する（`bash tests/run_all_tests.sh`）
 - [ ] ドキュメントを更新した
 - [ ] 10人のペルソナでテストケースをレビューした（重要な機能の場合）
+- [ ] PR に入るコミットが、この PR の目的のものだけである（`git fetch origin && git log --oneline origin/main..HEAD` で確認。無関係なコミットがあればブランチを `origin/main` から切り直す）
+
+> PR のタイトル・説明に無い変更が同梱されると、レビューの目に入らないまま main に入る
+> （実例: statusline の PR に model 固定のコミットが混入し、CLAUDE.md の例外表が議論なしで変わった）。
 
 ## テスト
 
